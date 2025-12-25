@@ -1,6 +1,8 @@
 services:
   mysql:
     image: mysql:8.0
+    platform: linux/amd64
+    command: --default-authentication-plugin=mysql_native_password
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
       MYSQL_DATABASE: librarydb
@@ -25,10 +27,8 @@ services:
     ports:
       - "5001:4000"
     restart: unless-stopped
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/librarydb
-      SPRING_DATASOURCE_USERNAME: libraryuser
-      SPRING_DATASOURCE_PASSWORD: librarypass
+    env_file:
+      - Backend/.env
     volumes:
       - backend_data:/app/data
       - ./uploads:/app/uploads
@@ -40,13 +40,9 @@ services:
     build:
       context: ./frontend/frontend
       dockerfile: Dockerfile
-      args:
-        - REACT_APP_API_URL=http://localhost:5001
     ports:
       - "3008:80"
     restart: unless-stopped
-    environment:
-      REACT_APP_API_URL: http://localhost:5001
     volumes:
       - frontend_data:/usr/share/nginx/html/data
     depends_on:

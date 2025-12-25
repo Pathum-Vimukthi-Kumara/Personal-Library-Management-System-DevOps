@@ -1,4 +1,10 @@
 ---
+- name: Remove corrupted docker repo file
+  file:
+    path: /etc/apt/sources.list.d/docker.list
+    state: absent
+  become: true
+
 - name: Ensure apt cache is updated
   apt:
     update_cache: yes
@@ -20,9 +26,8 @@
   become: true
 
 - name: Add Docker repository
-  ansible.builtin.copy:
-    dest: /etc/apt/sources.list.d/docker.list
-    content: "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+  ansible.builtin.shell: |
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
   become: true
 
 - name: Update apt after adding repo
@@ -30,10 +35,47 @@
     update_cache: yes
   become: true
 
+- name: Remove conflicting docker.io
+  apt:
+    name: ["docker.io", "docker-compose"]
+    state: absent
+  become: true
+
 - name: Install docker components
   apt:
     name: ["docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"]
     state: latest
+  become: true
+
+- name: Restart containerd
+  systemd:
+    name: containerd
+    state: restarted
+  become: true
+
+- name: Ensure /etc/docker exists
+  file:
+    path: /etc/docker
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: Configure Docker daemon (systemd cgroup, overlay2)
+  copy:
+    dest: /etc/docker/daemon.json
+    content: |
+      {
+        "exec-opts": ["native.cgroupdriver=systemd"],
+        "log-driver": "json-file",
+        "log-opts": {"max-size": "100m"},
+        "storage-driver": "overlay2"
+      }
+    mode: '0644'
+  become: true
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: true
   become: true
 
 - name: Add ansible user to docker group

@@ -1,7 +1,10 @@
 // API Service for communicating with the backend
-// Prefer build-time REACT_APP_API_URL, fall back to a window global (if injected at runtime),
-// then to the host mapped by docker-compose used in this workspace.
-const API_BASE_URL = 'http://localhost:5001';
+// Resolve API base in this order:
+// 1) build-time env (REACT_APP_API_URL)
+// 2) runtime global (window.REACT_APP_API_URL injected by server, if any)
+// 3) relative path (empty) which relies on reverse-proxy (/api -> backend)
+export const API_BASE_URL =
+  (process.env.REACT_APP_API_URL || (typeof window !== 'undefined' ? window.REACT_APP_API_URL : '') || '').replace(/\/$/, '');
 
 export const getAuthToken = () => {
   return localStorage.getItem('authToken');

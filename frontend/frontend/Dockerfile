@@ -1,6 +1,7 @@
 # Use official Node.js image as the base
 FROM node:18-alpine AS build
-ARG REACT_APP_API_URL=http://localhost:5001
+# Default to container-to-container URL; can be overridden with --build-arg
+ARG REACT_APP_API_URL=http://backend:4000
 ENV REACT_APP_API_URL=${REACT_APP_API_URL}
 
 WORKDIR /app

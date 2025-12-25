@@ -2,5 +2,17 @@
 - hosts: app
   become: true
   roles:
+    - setup
     - docker
+    - jenkins
     - app
+    - nginx
+
+- hosts: app
+  become: true
+  vars:
+    ansible_user: ansible
+  tasks:
+    - name: Switch to ansible user for remaining tasks
+      set_fact:
+        ansible_user: ansible

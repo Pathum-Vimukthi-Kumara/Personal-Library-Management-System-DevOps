@@ -9,16 +9,15 @@ pipeline {
     }
 
     parameters {
-        booleanParam(name: 'PUSH_TO_DOCKER', defaultValue: true, description: 'Push images to Docker Hub when enabled')
-        string(name: 'DOCKER_HUB_CREDENTIALS_ID', defaultValue: 'docker-hub-credentials', description: 'Jenkins credentials ID for Docker Hub (username+password)')
+        string(name: 'COMPOSE_DIR', defaultValue: '/opt/personal-library', description: 'Directory on server containing compose files')
     }
 
     triggers {
-        pollSCM('H/1 * * * *')  
+        // Polling only (builds every 1 minute if changes detected)
+        pollSCM('H/1 * * * *')
     }
 
     environment {
-        DOCKER_HUB_REPO        = 'pathum2002/personal-library'
         BACKEND_DIR           = 'Backend'
         FRONTEND_DIR          = 'frontend/frontend'
         IMAGE_TAG_BUILD       = "${env.BUILD_NUMBER}"
@@ -81,7 +80,7 @@ pipeline {
                         dir("${env.BACKEND_DIR}") {
                             script {
                                 echo "=== Building Backend Docker Image ==="
-                                def base = "${env.DOCKER_HUB_REPO}-backend"
+                                def base = "personal-library-backend"
                                 
                                 // Check if Dockerfile exists
                                 if (!fileExists('Dockerfile')) {
@@ -111,7 +110,7 @@ pipeline {
                         dir("${env.FRONTEND_DIR}") {
                             script {
                                 echo "=== Building Frontend Docker Image ==="
-                                def base = "${env.DOCKER_HUB_REPO}-frontend"
+                                def base = "personal-library-frontend"
                                 
                                 // Check if Dockerfile exists
                                 if (!fileExists('Dockerfile')) {
@@ -164,66 +163,28 @@ pipeline {
                         withCredentials([usernamePassword(
                             credentialsId: params.DOCKER_HUB_CREDENTIALS_ID, 
                             usernameVariable: 'DOCKER_USER', 
-                            passwordVariable: 'DOCKER_PASS'
-                        )]) {
-                            sh '''
-                                echo "Testing Docker Hub login..."
-                                echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                                    echo "List of personal-library images:"
+                                    docker images | grep "personal-library-" || echo "No personal-library images found"
+                                    echo "Total Docker images on system:"
+                                    docker images | wc -l || true
                                 echo "✓ Docker Hub login successful"
                                 docker logout
                             '''
                         }
-                    } catch (Exception e) {
-                        echo "WARNING: Docker Hub credentials not available or login failed"
-                        echo "Error: ${e.message}"
-                    }
-                }
-            }
-        }
 
-        stage('Push to Docker Hub') {
-            when { expression { return params.PUSH_TO_DOCKER } }
-            steps {
-                script {
-                    echo "=== Pushing Images to Docker Hub ==="
-                    try {
-                        withCredentials([usernamePassword(
-                            credentialsId: params.DOCKER_HUB_CREDENTIALS_ID, 
-                            usernameVariable: 'DOCKER_USER', 
-                            passwordVariable: 'DOCKER_PASS'
-                        )]) {
-                            sh """
-                                echo "Logging into Docker Hub..."
-                                echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                                
-                                # Push backend images if they exist
-                                if docker images | grep -q "${env.DOCKER_HUB_REPO}-backend"; then
-                                    echo "Pushing backend images..."
-                                    docker push ${env.DOCKER_HUB_REPO}-backend:${env.IMAGE_TAG_BUILD} || echo "Failed to push ${env.IMAGE_TAG_BUILD}"
-                                    docker push ${env.DOCKER_HUB_REPO}-backend:latest || echo "Failed to push latest"
-                                    echo "✓ Backend images pushed"
-                                else
-                                    echo "Backend image not found, skipping push"
-                                fi
-                                
-                                # Push frontend images if they exist
-                                if docker images | grep -q "${env.DOCKER_HUB_REPO}-frontend"; then
-                                    echo "Pushing frontend images..."
-                                    docker push ${env.DOCKER_HUB_REPO}-frontend:${env.IMAGE_TAG_BUILD} || echo "Failed to push ${env.IMAGE_TAG_BUILD}"
-                                    docker push ${env.DOCKER_HUB_REPO}-frontend:latest || echo "Failed to push latest"
-                                    echo "✓ Frontend images pushed"
-                                else
-                                    echo "Frontend image not found, skipping push"
-                                fi
-                                
-                                docker logout
-                                echo "✓ Docker Hub push completed"
-                            """
+                    stage('Deploy') {
+                        steps {
+                            script {
+                                echo "=== Deploying with Docker Compose on server ==="
+                                sh """
+                                    set -e
+                                    cd "${params.COMPOSE_DIR}"
+                                    echo "Using compose.yaml: building and starting"
+                                    docker compose -f compose.yaml up -d --build
+                                    echo "✓ Deployment completed"
+                                """
+                            }
                         }
-                    } catch (Exception e) {
-                        echo "ERROR: Failed to push to Docker Hub"
-                        echo "Error details: ${e.message}"
-                        error "Docker Hub push failed. Ensure a Jenkins Username/Password credential exists with ID '${params.DOCKER_HUB_CREDENTIALS_ID}'."
                     }
                 }
             }
@@ -232,11 +193,11 @@ pipeline {
 
     post {
         success {
-            echo '🎉 PIPELINE SUCCESSFUL!'
-            sh """
-                echo "=== Final Results ==="
+            echo ' PIPELINE SUCCESSFUL!'
+                            echo "Backend Image: personal-library-backend:${env.IMAGE_TAG_BUILD}"
+                            echo "Frontend Image: personal-library-frontend:${env.IMAGE_TAG_BUILD}"
                 echo "Build Number: ${env.BUILD_NUMBER}"
-                echo "Backend Image: ${env.DOCKER_HUB_REPO}-backend:${env.IMAGE_TAG_BUILD}"
+                            docker images | grep "personal-library-" || echo "No images to display"
                 echo "Frontend Image: ${env.DOCKER_HUB_REPO}-frontend:${env.IMAGE_TAG_BUILD}"
                 echo "=== Built Images ==="
                 docker images | grep "${env.DOCKER_HUB_REPO}" || echo "No images to display"

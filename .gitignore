@@ -4,3 +4,15 @@
 .terraform/
 node_modules/
 .env
+
+# Backend env files (keep .env.example tracked)
+Backend/.env
+Backend/.env.local
+Backend/.env.production
+Backend/.env.development
+
+# Frontend env files (keep .env.example tracked)
+frontend/frontend/.env
+frontend/frontend/.env.local
+frontend/frontend/.env.production
+frontend/frontend/.env.development

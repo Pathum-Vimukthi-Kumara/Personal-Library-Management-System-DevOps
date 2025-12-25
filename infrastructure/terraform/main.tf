@@ -14,7 +14,7 @@ provider "digitalocean" {
 resource "digitalocean_droplet" "web" {
   image  = "ubuntu-22-04-x64"
   name   = "devops-project"
-  region = "nyc1"
+  region = var.region
   size   = "s-1vcpu-2gb"
   
   ssh_keys = [digitalocean_ssh_key.default.fingerprint]
@@ -25,13 +25,19 @@ resource "digitalocean_droplet" "web" {
     apt install -y docker.io docker-compose git
     systemctl enable docker
     systemctl start docker
-    usermod -aG docker root
+    useradd -m -s /bin/bash ansible
+    mkdir -p /home/ansible/.ssh
+    echo "${file(pathexpand(var.ssh_key_path))}" > /home/ansible/.ssh/authorized_keys
+    chown -R ansible:ansible /home/ansible/.ssh
+    chmod 700 /home/ansible/.ssh
+    chmod 600 /home/ansible/.ssh/authorized_keys
+    echo "ansible ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ansible
   EOF
 }
 
 resource "digitalocean_ssh_key" "default" {
   name       = "devops-key"
-  public_key = file("/home/pathum_vimukthi/.ssh/id_rsa.pub")
+  public_key = file(pathexpand(var.ssh_key_path))
 }
 
 output "droplet_ip" {

@@ -29,16 +29,14 @@ CREATE TABLE IF NOT EXISTS books (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Create indexes for better performance
-CREATE INDEX IF NOT EXISTS idx_books_user_id ON books(user_id);
-CREATE INDEX IF NOT EXISTS idx_books_title ON books(title);
-CREATE INDEX IF NOT EXISTS idx_books_author ON books(author);
-CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+-- Create indexes for better performance (runs only on first init)
+CREATE INDEX idx_books_user_id ON books(user_id);
+CREATE INDEX idx_books_title ON books(title);
+CREATE INDEX idx_books_author ON books(author);
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_users_email ON users(email);
 
--- Backfill for existing databases created before these columns were added
-ALTER TABLE books ADD COLUMN IF NOT EXISTS pages_total INT DEFAULT 0;
-ALTER TABLE books ADD COLUMN IF NOT EXISTS pages_read INT DEFAULT 0;
+-- Backfill removed: columns are defined above and this script runs only on first init
 
 -- Insert sample data
 -- Password: admin123 (BCrypt encoded)

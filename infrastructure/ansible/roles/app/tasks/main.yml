@@ -15,15 +15,36 @@
 
 - name: Clone or update repository
   git:
-    repo: "https://github.com/Pathum-Vimukthi-Kumara/DevOps-Project-_-Personal-Library-Management-System.git"
+    repo: "https://github.com/Pathum-Vimukthi-Kumara/personal-library-system-devops_project-.git"
     dest: /opt/personal-library
     version: master
     force: yes
   become: true
 
+- name: Stop any existing containers
+  ansible.builtin.shell: |
+    docker compose -f /opt/personal-library/compose.yaml down || true
+    docker compose -f /opt/personal-library/compose.prod.yaml down || true
+  args:
+    chdir: /opt/personal-library
+  become: true
+  ignore_errors: true
+
+- name: Ensure backend env exists (create from example if missing)
+  ansible.builtin.shell: |
+    if [ ! -f Backend/.env ] && [ -f Backend/.env.example ]; then cp Backend/.env.example Backend/.env; fi
+  args:
+    chdir: /opt/personal-library
+  become: true
+
 - name: Bring up services with Docker Compose
   ansible.builtin.shell: |
-    docker compose -f /opt/personal-library/compose.yaml up -d --build
+    if [ -f compose.prod.yaml ]; then
+      docker compose -f /opt/personal-library/compose.prod.yaml pull
+      docker compose -f /opt/personal-library/compose.prod.yaml up -d
+    else
+      docker compose -f /opt/personal-library/compose.yaml up -d --build
+    fi
   args:
     chdir: /opt/personal-library
   become: true
