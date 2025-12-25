@@ -76,71 +76,7 @@ pipeline {
             }
         }
 
-        stage('Build Docker Images') {
-            parallel {
-                stage('Backend Image') {
-                    steps {
-                        dir("${env.BACKEND_DIR}") {
-                            script {
-                                def base = 'personal-library-backend'
-                                if (!fileExists('Dockerfile')) {
-                                    error 'Dockerfile not found in backend directory'
-                                }
-                                sh """
-                                    echo "Building Docker image: ${base}"
-                                    docker build \
-                                        --no-cache \
-                                        -t ${base}:${env.IMAGE_TAG_BUILD} \
-                                        -t ${base}:latest .
-                                    echo "✓ Backend Docker image built successfully"
-                                """
-                                sh """
-                                    echo "Verifying backend image:"
-                                    docker images | grep "${base}" || echo "Backend image not found after build"
-                                """
-                            }
-                        }
-                    }
-                }
-                stage('Frontend Image') {
-                    steps {
-                        dir("${env.FRONTEND_DIR}") {
-                            script {
-                                def base = 'personal-library-frontend'
-                                if (!fileExists('Dockerfile')) {
-                                    echo 'WARNING: No Dockerfile in frontend directory, skipping frontend build'
-                                    return
-                                }
-                                sh """
-                                    echo "Building Docker image: ${base}"
-                                    docker build \
-                                        --no-cache \
-                                        -t ${base}:${env.IMAGE_TAG_BUILD} \
-                                        -t ${base}:latest .
-                                    echo "✓ Frontend Docker image built successfully"
-                                """
-                                sh """
-                                    echo "Verifying frontend image:"
-                                    docker images | grep "${base}" || echo "Frontend image not found after build"
-                                """
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Verify Docker Images') {
-            steps {
-                sh """
-                    echo "=== Verifying Docker Images ==="
-                    echo "List of personal-library images:"
-                    docker images | grep 'personal-library-' || echo 'No personal-library images found'
-                    echo "Total Docker images on system:"
-                    docker images | wc -l || true
-                """
-            }
-        }
+        // Docker build and verification stages removed. Deployment is handled via Ansible.
 
         stage('Deploy via Ansible') {
             steps {
@@ -181,11 +117,9 @@ pipeline {
             """
         }
         always {
-            echo '=== Cleaning Up ==='
+            echo '=== Post Build Cleanup ==='
             sh """
-                echo "Cleaning up Docker resources..."
-                docker image prune -f || echo 'Docker cleanup failed'
-                echo "✓ Cleanup completed"
+                echo "No Docker cleanup required for Ansible-only pipeline"
             """
         }
     }
