@@ -39,12 +39,8 @@
 
 - name: Bring up services with Docker Compose
   ansible.builtin.shell: |
-    if [ -f compose.prod.yaml ]; then
-      docker compose -f /opt/personal-library/compose.prod.yaml pull
-      docker compose -f /opt/personal-library/compose.prod.yaml up -d
-    else
-      docker compose -f /opt/personal-library/compose.yaml up -d --build
-    fi
+    # Always build from local source to deploy latest changes from Git
+    docker compose -f /opt/personal-library/compose.yaml up -d --build
   args:
     chdir: /opt/personal-library
   become: true
