@@ -89,9 +89,9 @@ pipeline {
                                                 echo "Tags:      ${params.ANSIBLE_TAGS}"
                                                 # Run playbook with tags (if provided)
                                                 if [ -n "${params.ANSIBLE_TAGS}" ]; then
-                                                    ansible-playbook -i ${params.ANSIBLE_INVENTORY} ${params.ANSIBLE_PLAYBOOK} --tags ${params.ANSIBLE_TAGS}
+                                                    /usr/bin/ansible-playbook -i ${params.ANSIBLE_INVENTORY} ${params.ANSIBLE_PLAYBOOK} --tags ${params.ANSIBLE_TAGS}
                                                 else
-                                                    ansible-playbook -i ${params.ANSIBLE_INVENTORY} ${params.ANSIBLE_PLAYBOOK}
+                                                    /usr/bin/ansible-playbook -i ${params.ANSIBLE_INVENTORY} ${params.ANSIBLE_PLAYBOOK}
                                                 fi
                                                 echo "✓ Ansible deployment completed"
                                         """
