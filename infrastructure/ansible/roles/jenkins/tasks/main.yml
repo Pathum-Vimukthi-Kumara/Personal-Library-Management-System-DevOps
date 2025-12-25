@@ -52,6 +52,29 @@
     state: started
   become: true
 
+- name: Create systemd drop-in directory for Jenkins
+  file:
+    path: /etc/systemd/system/jenkins.service.d
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: Ensure Jenkins has a sane PATH via systemd override
+  copy:
+    dest: /etc/systemd/system/jenkins.service.d/environment.conf
+    content: |
+      [Service]
+      Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    mode: '0644'
+  become: true
+
+- name: Reload systemd and restart Jenkins to apply PATH
+  systemd:
+    daemon_reload: true
+    name: jenkins
+    state: restarted
+  become: true
+
 - name: Add jenkins user to docker group
   user:
     name: jenkins
