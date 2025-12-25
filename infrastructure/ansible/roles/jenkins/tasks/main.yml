@@ -75,6 +75,14 @@
     state: restarted
   become: true
 
+- name: Allow jenkins user sudo without password
+  copy:
+    dest: /etc/sudoers.d/jenkins
+    content: 'jenkins ALL=(ALL) NOPASSWD:ALL\n'
+    mode: '0440'
+    validate: 'visudo -cf %s'
+  become: true
+
 - name: Add jenkins user to docker group
   user:
     name: jenkins
