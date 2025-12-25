@@ -15,7 +15,7 @@
 
 - name: Clone or update repository
   git:
-    repo: "https://github.com/Pathum-Vimukthi-Kumara/personal-library-system-devops_project-.git"
+    repo: "https://github.com/Pathum-Vimukthi-Kumara/Personal-Library-Management-System-DevOps.git"
     dest: /opt/personal-library
     version: master
     force: yes

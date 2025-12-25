@@ -10,6 +10,9 @@ pipeline {
 
     parameters {
         string(name: 'COMPOSE_DIR', defaultValue: '/opt/personal-library', description: 'Directory on server containing compose files')
+        string(name: 'ANSIBLE_INVENTORY', defaultValue: 'infrastructure/ansible/inventory.local.ini', description: 'Path to Ansible inventory in repo')
+        string(name: 'ANSIBLE_PLAYBOOK', defaultValue: 'infrastructure/ansible/site.yml', description: 'Path to Ansible playbook in repo')
+        string(name: 'ANSIBLE_TAGS', defaultValue: 'app', description: 'Ansible tags to run for deployment (optional)')
     }
 
     triggers {
@@ -139,15 +142,25 @@ pipeline {
             }
         }
 
-        stage('Deploy') {
+        stage('Deploy via Ansible') {
             steps {
-                sh """
-                    set -e
-                    echo "=== Deploying with Docker Compose ==="
-                    cd "${params.COMPOSE_DIR}"
-                    docker compose -f compose.yaml up -d --build
-                    echo "✓ Deployment completed"
-                """
+                dir("${env.WORKSPACE}") {
+                    sh """
+                        set -e
+                        echo "=== Deploying via Ansible ==="
+                        ansible --version
+                        echo "Inventory: ${params.ANSIBLE_INVENTORY}"
+                        echo "Playbook:  ${params.ANSIBLE_PLAYBOOK}"
+                        echo "Tags:      ${params.ANSIBLE_TAGS}"
+                        # Run playbook with tags (if provided)
+                        if [ -n "${params.ANSIBLE_TAGS}" ]; then
+                          ansible-playbook -i ${params.ANSIBLE_INVENTORY} ${params.ANSIBLE_PLAYBOOK} --tags ${params.ANSIBLE_TAGS}
+                        else
+                          ansible-playbook -i ${params.ANSIBLE_INVENTORY} ${params.ANSIBLE_PLAYBOOK}
+                        fi
+                        echo "✓ Ansible deployment completed"
+                    """
+                }
             }
         }
     }

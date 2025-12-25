@@ -38,6 +38,13 @@
     state: present
   become: true
 
+- name: Install Ansible (for Jenkins-driven deployments)
+  apt:
+    name: ansible
+    state: present
+    update_cache: yes
+  become: true
+
 - name: Ensure Jenkins service is enabled and started
   systemd:
     name: jenkins
@@ -50,6 +57,27 @@
     name: jenkins
     groups: docker
     append: yes
+  become: true
+
+- name: Check docker socket
+  stat:
+    path: /var/run/docker.sock
+  register: docker_sock
+  become: true
+
+- name: Ensure docker socket owned by root:docker and 0660
+  file:
+    path: /var/run/docker.sock
+    owner: root
+    group: docker
+    mode: '0660'
+  when: docker_sock.stat.exists
+  become: true
+
+- name: Restart Jenkins to pick up new group membership
+  systemd:
+    name: jenkins
+    state: restarted
   become: true
 
 - name: Wait for Jenkins to be up on port 8080
