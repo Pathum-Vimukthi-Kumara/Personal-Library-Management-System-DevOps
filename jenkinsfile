@@ -81,73 +81,27 @@ pipeline { // Jenkinsfile for building and deploying Personal Library applicatio
             steps {
                 dir("${env.WORKSPACE}") {
                     script {
-                        if (params.ANSIBLE_CREDENTIALS_ID?.trim()) {
-                            try {
-                                sshagent(credentials: [params.ANSIBLE_CREDENTIALS_ID]) {
-                                    sh """
-                                        set -e
-                                        echo "=== Deploying via Ansible (ssh-agent) ==="
-                                        echo "Inventory: ${params.ANSIBLE_INVENTORY}"
-                                        echo "Playbook:  ${params.ANSIBLE_PLAYBOOK}"
-                                        echo "Tags:      ${params.ANSIBLE_TAGS}"
-                                        export ANSIBLE_HOST_KEY_CHECKING=False
-                                        USER=root
-                                        if [ -n "${params.ANSIBLE_TAGS}" ]; then
-                                            /usr/bin/ansible-playbook -i ${params.ANSIBLE_INVENTORY} ${params.ANSIBLE_PLAYBOOK} --tags ${params.ANSIBLE_TAGS} \
-                                                -e ansible_user=\${USER} -e "ansible_ssh_common_args='-o StrictHostKeyChecking=no'"
-                                        else
-                                            /usr/bin/ansible-playbook -i ${params.ANSIBLE_INVENTORY} ${params.ANSIBLE_PLAYBOOK} \
-                                                -e ansible_user=\${USER} -e "ansible_ssh_common_args='-o StrictHostKeyChecking=no'"
-                                        fi
-                                        echo "✓ Ansible deployment completed"
-                                    """
-                                }
-                            } catch (err) {
-                                echo "ssh-agent deploy failed; falling back to key file. Error: ${err}"
-                                sh """
-                                    set -e
-                                    echo "=== Deploying via Ansible (fallback) ==="
-                                    export ANSIBLE_HOST_KEY_CHECKING=False
-                                    KEY=${env.DEFAULT_SSH_KEY}
-                                    echo "Using default key: \${KEY}"
-                                    if [ ! -f "\${KEY}" ]; then
-                                        echo "ERROR: SSH key not found at \${KEY}. Provide ANSIBLE_CREDENTIALS_ID or place key there."
-                                        exit 1
-                                    fi
-                                    if [ -n "${params.ANSIBLE_TAGS}" ]; then
-                                        /usr/bin/ansible-playbook -i ${params.ANSIBLE_INVENTORY} ${params.ANSIBLE_PLAYBOOK} --tags ${params.ANSIBLE_TAGS} \
-                                            -e ansible_user=root -e ansible_ssh_private_key_file=\${KEY} -e "ansible_ssh_common_args='-o StrictHostKeyChecking=no'"
-                                    else
-                                        /usr/bin/ansible-playbook -i ${params.ANSIBLE_INVENTORY} ${params.ANSIBLE_PLAYBOOK} \
-                                            -e ansible_user=root -e ansible_ssh_private_key_file=\${KEY} -e "ansible_ssh_common_args='-o StrictHostKeyChecking=no'"
-                                    fi
-                                    echo "✓ Ansible deployment completed (fallback)"
-                                """
-                            }
+                        echo "=== Deploying via Ansible (Jenkins Ansible plugin) ==="
+                        def extras = "-e ansible_user=root -e ansible_ssh_common_args='-o StrictHostKeyChecking=no'"
+                        if (params.ANSIBLE_TAGS?.trim()) {
+                            ansiblePlaybook(
+                                playbook: params.ANSIBLE_PLAYBOOK,
+                                inventory: params.ANSIBLE_INVENTORY,
+                                credentialsId: params.ANSIBLE_CREDENTIALS_ID,
+                                tags: params.ANSIBLE_TAGS,
+                                colorized: true,
+                                extras: extras
+                            )
                         } else {
-                            sh """
-                                set -e
-                                echo "=== Deploying via Ansible ==="
-                                echo "Inventory: ${params.ANSIBLE_INVENTORY}"
-                                echo "Playbook:  ${params.ANSIBLE_PLAYBOOK}"
-                                echo "Tags:      ${params.ANSIBLE_TAGS}"
-                                export ANSIBLE_HOST_KEY_CHECKING=False
-                                KEY=${env.DEFAULT_SSH_KEY}
-                                echo "Using default key: \${KEY}"
-                                if [ ! -f "\${KEY}" ]; then
-                                    echo "ERROR: SSH key not found at \${KEY}. Provide ANSIBLE_CREDENTIALS_ID or place key there."
-                                    exit 1
-                                fi
-                                if [ -n "${params.ANSIBLE_TAGS}" ]; then
-                                    /usr/bin/ansible-playbook -i ${params.ANSIBLE_INVENTORY} ${params.ANSIBLE_PLAYBOOK} --tags ${params.ANSIBLE_TAGS} \
-                                        -e ansible_user=root -e ansible_ssh_private_key_file=\${KEY} -e "ansible_ssh_common_args='-o StrictHostKeyChecking=no'"
-                                else
-                                    /usr/bin/ansible-playbook -i ${params.ANSIBLE_INVENTORY} ${params.ANSIBLE_PLAYBOOK} \
-                                        -e ansible_user=root -e ansible_ssh_private_key_file=\${KEY} -e "ansible_ssh_common_args='-o StrictHostKeyChecking=no'"
-                                fi
-                                echo "✓ Ansible deployment completed"
-                            """
+                            ansiblePlaybook(
+                                playbook: params.ANSIBLE_PLAYBOOK,
+                                inventory: params.ANSIBLE_INVENTORY,
+                                credentialsId: params.ANSIBLE_CREDENTIALS_ID,
+                                colorized: true,
+                                extras: extras
+                            )
                         }
+                        echo "✓ Ansible deployment completed"
                     }
                 }
             }
