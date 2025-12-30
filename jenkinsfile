@@ -1,4 +1,4 @@
-pipeline { // Jenkinsfile for building and deploying Personal Library application using Ansible
+pipeline { 
     agent any
 
     options {
