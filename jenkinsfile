@@ -62,6 +62,27 @@ pipeline { // Jenkinsfile for building and deploying Personal Library applicatio
             }
         }
 
+        stage('SSH Connectivity') {
+            steps {
+                script {
+                    echo "=== Testing SSH connectivity with Ansible ping ==="
+                    try {
+                        ansibleAdhoc(
+                            hosts: 'app',
+                            inventory: params.ANSIBLE_INVENTORY,
+                            credentialsId: params.ANSIBLE_CREDENTIALS_ID,
+                            module: 'ping',
+                            colorized: true,
+                            hostKeyChecking: false
+                        )
+                        echo "✓ SSH connectivity OK"
+                    } catch (err) {
+                        error "SSH connectivity failed using Jenkins credential '${params.ANSIBLE_CREDENTIALS_ID}'. Please update the credential to a valid unencrypted OpenSSH PEM private key that matches the droplet (root@${readFile('infrastructure/terraform/terraform.tfstate').contains('droplet_ip') ? 'DigitalOcean droplet' : 'target host'}). Error: ${err}"
+                    }
+                }
+            }
+        }
+
         stage('Build Backend') {
             steps {
                 dir("${env.BACKEND_DIR}") {
