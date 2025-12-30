@@ -79,24 +79,30 @@ pipeline {
         // Docker build and verification stages removed. Deployment is handled via Ansible.
 
                 stage('Deploy via Ansible') {
-                        steps {
-                                dir("${env.WORKSPACE}") {
-                                        sh """
-                                                set -e
-                                                echo "=== Deploying via Ansible ==="
-                                                echo "Inventory: ${params.ANSIBLE_INVENTORY}"
-                                                echo "Playbook:  ${params.ANSIBLE_PLAYBOOK}"
-                                                echo "Tags:      ${params.ANSIBLE_TAGS}"
-                                                # Run playbook with tags (if provided)
-                                                if [ -n "${params.ANSIBLE_TAGS}" ]; then
-                                                    /usr/bin/ansible-playbook -i ${params.ANSIBLE_INVENTORY} ${params.ANSIBLE_PLAYBOOK} --tags ${params.ANSIBLE_TAGS}
-                                                else
-                                                    /usr/bin/ansible-playbook -i ${params.ANSIBLE_INVENTORY} ${params.ANSIBLE_PLAYBOOK}
-                                                fi
-                                                echo "✓ Ansible deployment completed"
-                                        """
-                                }
+                    steps {
+                        dir("${env.WORKSPACE}") {
+                            withCredentials([sshUserPrivateKey(credentialsId: 'do-ssh-key', keyFileVariable: 'SSH_KEY')]) {
+                                sh """
+                                    set -e
+                                    echo "=== Deploying via Ansible ==="
+                                    echo "Inventory: ${params.ANSIBLE_INVENTORY}"
+                                    echo "Playbook:  ${params.ANSIBLE_PLAYBOOK}"
+                                    echo "Tags:      ${params.ANSIBLE_TAGS}"
+                                    echo "Using SSH key: ${SSH_KEY}"
+                                    export ANSIBLE_HOST_KEY_CHECKING=False
+                                    # Run playbook with tags (if provided) and override SSH key and user
+                                    if [ -n "${params.ANSIBLE_TAGS}" ]; then
+                                        /usr/bin/ansible-playbook -i ${params.ANSIBLE_INVENTORY} ${params.ANSIBLE_PLAYBOOK} --tags ${params.ANSIBLE_TAGS} \
+                                        -e ansible_user=root -e ansible_ssh_private_key_file=${SSH_KEY} -e "ansible_ssh_common_args='-o StrictHostKeyChecking=no'"
+                                    else
+                                        /usr/bin/ansible-playbook -i ${params.ANSIBLE_INVENTORY} ${params.ANSIBLE_PLAYBOOK} \
+                                        -e ansible_user=root -e ansible_ssh_private_key_file=${SSH_KEY} -e "ansible_ssh_common_args='-o StrictHostKeyChecking=no'"
+                                    fi
+                                    echo "✓ Ansible deployment completed"
+                                """
+                            }
                         }
+                    }
                 }
 
                 stage('Smoke Test') {
