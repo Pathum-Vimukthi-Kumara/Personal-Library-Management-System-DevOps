@@ -10,14 +10,14 @@ pipeline {
 
     parameters {
         string(name: 'COMPOSE_DIR', defaultValue: '/opt/personal-library', description: 'Directory on server containing compose files')
-        string(name: 'ANSIBLE_INVENTORY', defaultValue: 'infrastructure/ansible/inventory.local.ini', description: 'Path to Ansible inventory in repo')
+        string(name: 'ANSIBLE_INVENTORY', defaultValue: 'infrastructure/ansible/inventory.ini', description: 'Path to Ansible inventory in repo (DigitalOcean droplet)')
         string(name: 'ANSIBLE_PLAYBOOK', defaultValue: 'infrastructure/ansible/site.yml', description: 'Path to Ansible playbook in repo')
-        string(name: 'ANSIBLE_TAGS', defaultValue: 'app', description: 'Ansible tags to run for deployment (optional)')
+        string(name: 'ANSIBLE_TAGS', defaultValue: '', description: 'Ansible tags to run for deployment (optional)')
     }
 
     triggers {
-        // Poll SCM exactly every minute
-        pollSCM('* * * * *')
+        // Trigger on GitHub push via webhook (configure in Jenkins)
+        githubPush()
     }
 
     environment {
@@ -97,6 +97,29 @@ pipeline {
                                         """
                                 }
                         }
+                }
+
+                stage('Smoke Test') {
+                    steps {
+                        script {
+                            def tf = readFile('infrastructure/terraform/terraform.tfstate')
+                            def json = new groovy.json.JsonSlurperClassic().parseText(tf)
+                            def dropletIp = json?.outputs?.droplet_ip?.value ?: ''
+                            if (!dropletIp) {
+                                error 'Droplet IP not found in terraform.tfstate outputs.droplet_ip.value'
+                            }
+                            env.DROPLET_IP = dropletIp
+                        }
+                        sh """
+                            echo "=== Smoke Test ==="
+                            echo "Checking frontend at http://${DROPLET_IP}:3008"
+                            # Fail if curl errors or non-200 without content
+                            curl -sSf -m 20 http://${DROPLET_IP}:3008 | head -c 200 > /dev/null
+                            echo "✓ Frontend reachable"
+                            echo "Checking backend health at http://${DROPLET_IP}:5001/actuator/health (optional)"
+                            curl -s -m 10 http://${DROPLET_IP}:5001/actuator/health || true
+                        """
+                    }
                 }
     }
 
