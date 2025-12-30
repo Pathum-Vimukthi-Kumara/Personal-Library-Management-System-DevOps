@@ -77,7 +77,7 @@ pipeline {
                         )
                         echo "✓ SSH connectivity OK"
                     } catch (err) {
-                        error "SSH connectivity failed using Jenkins credential '${params.ANSIBLE_CREDENTIALS_ID}'. Please update the credential to a valid unencrypted OpenSSH PEM private key that matches the droplet (root@${readFile('infrastructure/terraform/terraform.tfstate').contains('droplet_ip') ? 'DigitalOcean droplet' : 'target host'}). Error: ${err}"
+                        error "SSH connectivity failed using Jenkins credential '${params.ANSIBLE_CREDENTIALS_ID}'. Update the credential to an unencrypted OpenSSH private key that matches the droplet's authorized_keys (user: root). Error: ${err}"
                     }
                 }
             }
@@ -159,28 +159,39 @@ pipeline {
             }
         }
 
-                stage('Smoke Test') {
-                    steps {
-                        script {
-                            def tf = readFile('infrastructure/terraform/terraform.tfstate')
-                            def json = new groovy.json.JsonSlurperClassic().parseText(tf)
-                            def dropletIp = json?.outputs?.droplet_ip?.value ?: ''
-                            if (!dropletIp) {
-                                error 'Droplet IP not found in terraform.tfstate outputs.droplet_ip.value'
-                            }
-                            env.DROPLET_IP = dropletIp
+        stage('Smoke Test') {
+            steps {
+                script {
+                    def inv = readFile('infrastructure/ansible/inventory.ini')
+                    def lines = inv.readLines()
+                    def dropletIp = ''
+                    def inApp = false
+                    for (def raw : lines) {
+                        def l = raw.trim()
+                        if (l.startsWith('[')) {
+                            inApp = (l == '[app]')
+                            continue
                         }
-                        sh """
-                            echo "=== Smoke Test ==="
-                            echo "Checking frontend at http://${DROPLET_IP}:3008"
-                            # Fail if curl errors or non-200 without content
-                            curl -sSf -m 20 http://${DROPLET_IP}:3008 | head -c 200 > /dev/null
-                            echo "✓ Frontend reachable"
-                            echo "Checking backend health at http://${DROPLET_IP}:5001/actuator/health (optional)"
-                            curl -s -m 10 http://${DROPLET_IP}:5001/actuator/health || true
-                        """
+                        if (inApp && l && !l.startsWith('#') && !l.startsWith('[')) {
+                            dropletIp = l.split(/\s+/)[0]
+                            break
+                        }
                     }
+                    if (!dropletIp) {
+                        error 'Droplet IP not found in inventory [app] group'
+                    }
+                    env.DROPLET_IP = dropletIp
                 }
+                sh """
+                    echo "=== Smoke Test ==="
+                    echo "Checking frontend at http://${DROPLET_IP}:3008"
+                    curl -sSf -m 20 http://${DROPLET_IP}:3008 | head -c 200 > /dev/null
+                    echo "✓ Frontend reachable"
+                    echo "Checking backend health at http://${DROPLET_IP}:5001/actuator/health (optional)"
+                    curl -s -m 10 http://${DROPLET_IP}:5001/actuator/health || true
+                """
+            }
+        }
     }
 
     post {
