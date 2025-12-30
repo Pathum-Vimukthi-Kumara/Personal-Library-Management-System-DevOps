@@ -38,7 +38,7 @@ pipeline {// Jenkinsfile for building and deploying Personal Library application
                     chmod +x ${env.BACKEND_DIR}/mvnw || true
                     echo "✓ Checkout completed"
                 """
-            }
+                                                        sshagent(credentials: [params.ANSIBLE_CREDENTIALS_ID]) {
         }
 
         stage('Verify Environment') {
@@ -46,19 +46,19 @@ pipeline {// Jenkinsfile for building and deploying Personal Library application
                 sh """
                     echo "=== Environment Verification ==="
                     echo "Workspace: ${env.WORKSPACE}"
-                    echo "Build Number: ${env.BUILD_NUMBER}"
+                                                                USER=root
                     echo "Git Commit: ${env.GIT_COMMIT}"
                     echo "Backend Dir: ${env.BACKEND_DIR}"
-                    echo "Frontend Dir: ${env.FRONTEND_DIR}"
+                                                                        -e ansible_user=\${USER} -e "ansible_ssh_common_args='-o StrictHostKeyChecking=no'"
 
                     echo "=== Directory Structure ==="
-                    echo "Backend contents:"
+                                                                        -e ansible_user=\${USER} -e "ansible_ssh_common_args='-o StrictHostKeyChecking=no'"
                     ls -la ${env.BACKEND_DIR}/ || echo "Backend directory not found"
                     echo "Frontend contents:"
                     ls -la ${env.FRONTEND_DIR}/ || echo "Frontend directory not found"
 
                     echo "=== Tools Verification ==="
-                    java -version || echo "Java not available"
+                                                        echo "ssh-agent deploy failed; falling back to key file. Error: ${err}"
                     docker --version || echo "Docker not available"
                     echo "✓ Environment verification completed"
                 """
