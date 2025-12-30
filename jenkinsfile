@@ -82,7 +82,7 @@ pipeline { // Jenkinsfile for building and deploying Personal Library applicatio
                 dir("${env.WORKSPACE}") {
                     script {
                         echo "=== Deploying via Ansible (Jenkins Ansible plugin) ==="
-                        def extras = "-e ansible_user=root -e ansible_ssh_common_args='-o StrictHostKeyChecking=no'"
+                        // Rely on inventory for ansible_user and ssh options; disable host key checking via plugin
                         if (params.ANSIBLE_TAGS?.trim()) {
                             ansiblePlaybook(
                                 playbook: params.ANSIBLE_PLAYBOOK,
@@ -90,7 +90,7 @@ pipeline { // Jenkinsfile for building and deploying Personal Library applicatio
                                 credentialsId: params.ANSIBLE_CREDENTIALS_ID,
                                 tags: params.ANSIBLE_TAGS,
                                 colorized: true,
-                                extras: extras
+                                hostKeyChecking: false
                             )
                         } else {
                             ansiblePlaybook(
@@ -98,7 +98,7 @@ pipeline { // Jenkinsfile for building and deploying Personal Library applicatio
                                 inventory: params.ANSIBLE_INVENTORY,
                                 credentialsId: params.ANSIBLE_CREDENTIALS_ID,
                                 colorized: true,
-                                extras: extras
+                                hostKeyChecking: false
                             )
                         }
                         echo "✓ Ansible deployment completed"
