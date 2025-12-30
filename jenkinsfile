@@ -81,27 +81,58 @@ pipeline { // Jenkinsfile for building and deploying Personal Library applicatio
             steps {
                 dir("${env.WORKSPACE}") {
                     script {
-                        echo "=== Deploying via Ansible (Jenkins Ansible plugin) ==="
-                        // Rely on inventory for ansible_user and ssh options; disable host key checking via plugin
-                        if (params.ANSIBLE_TAGS?.trim()) {
-                            ansiblePlaybook(
-                                playbook: params.ANSIBLE_PLAYBOOK,
-                                inventory: params.ANSIBLE_INVENTORY,
-                                credentialsId: params.ANSIBLE_CREDENTIALS_ID,
-                                tags: params.ANSIBLE_TAGS,
-                                colorized: true,
-                                hostKeyChecking: false
-                            )
-                        } else {
-                            ansiblePlaybook(
-                                playbook: params.ANSIBLE_PLAYBOOK,
-                                inventory: params.ANSIBLE_INVENTORY,
-                                credentialsId: params.ANSIBLE_CREDENTIALS_ID,
-                                colorized: true,
-                                hostKeyChecking: false
-                            )
+                        echo "=== Deploying via Ansible (primary: credentialsId) ==="
+                        try {
+                            if (params.ANSIBLE_TAGS?.trim()) {
+                                ansiblePlaybook(
+                                    playbook: params.ANSIBLE_PLAYBOOK,
+                                    inventory: params.ANSIBLE_INVENTORY,
+                                    credentialsId: params.ANSIBLE_CREDENTIALS_ID,
+                                    tags: params.ANSIBLE_TAGS,
+                                    colorized: true,
+                                    hostKeyChecking: false
+                                )
+                            } else {
+                                ansiblePlaybook(
+                                    playbook: params.ANSIBLE_PLAYBOOK,
+                                    inventory: params.ANSIBLE_INVENTORY,
+                                    credentialsId: params.ANSIBLE_CREDENTIALS_ID,
+                                    colorized: true,
+                                    hostKeyChecking: false
+                                )
+                            }
+                            echo "✓ Ansible deployment completed"
+                        } catch (err) {
+                            echo "Primary deploy with Jenkins credential failed: ${err}"
+                            echo "Retrying with default key at ${env.DEFAULT_SSH_KEY} via extras..."
+                            // Fallback uses default key path; ensure the file exists on the agent
+                            sh """
+                                if [ ! -f "${env.DEFAULT_SSH_KEY}" ]; then
+                                  echo "ERROR: Default SSH key not found at ${env.DEFAULT_SSH_KEY}" >&2
+                                  exit 1
+                                fi
+                            """
+                            def fallbackExtras = "-e ansible_ssh_private_key_file=${env.DEFAULT_SSH_KEY}"
+                            if (params.ANSIBLE_TAGS?.trim()) {
+                                ansiblePlaybook(
+                                    playbook: params.ANSIBLE_PLAYBOOK,
+                                    inventory: params.ANSIBLE_INVENTORY,
+                                    colorized: true,
+                                    hostKeyChecking: false,
+                                    tags: params.ANSIBLE_TAGS,
+                                    extras: fallbackExtras
+                                )
+                            } else {
+                                ansiblePlaybook(
+                                    playbook: params.ANSIBLE_PLAYBOOK,
+                                    inventory: params.ANSIBLE_INVENTORY,
+                                    colorized: true,
+                                    hostKeyChecking: false,
+                                    extras: fallbackExtras
+                                )
+                            }
+                            echo "✓ Ansible deployment completed (fallback)"
                         }
-                        echo "✓ Ansible deployment completed"
                     }
                 }
             }
