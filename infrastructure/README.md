@@ -59,8 +59,8 @@ The repository includes a `jenkinsfile` that automates build and deployment when
 - Jenkins with the GitHub plugin installed and a Linux agent.
 - Ansible installed on the Jenkins agent (`ansible-playbook` in PATH).
 - SSH access from Jenkins agent to the droplet. Either:
-	- Ensure the private key is at `~/.ssh/id_rsa` on the agent (matching `infrastructure/ansible/inventory.ini`), or
-	- Store the SSH key in Jenkins Credentials and update the inventory path accordingly.
+	- Ensure the private key is at `/var/lib/jenkins/.ssh/id_rsa` on the agent (pipeline default), or
+	- Store the SSH key in Jenkins Credentials and pass its ID via pipeline parameter `ANSIBLE_CREDENTIALS_ID`.
 
 ### Set Up GitHub Trigger
 1. In Jenkins, create a Multibranch Pipeline or Pipeline job pointing to your GitHub repo.
@@ -70,13 +70,14 @@ The repository includes a `jenkinsfile` that automates build and deployment when
 ### Pipeline Behavior
 - On push, Jenkins:
 	- Checks out code and verifies the backend compiles.
-	- Runs Ansible: `ansible-playbook -i infrastructure/ansible/inventory.ini infrastructure/ansible/site.yml`.
+	- Runs Ansible: `ansible-playbook -i infrastructure/ansible/inventory.ini infrastructure/ansible/site.yml` using either the credential ID or default key.
 	- Performs a smoke test against the droplet (reads IP from Terraform state) at `http://<droplet_ip>:3008`.
 
 ### Parameters (Defaults)
 - `ANSIBLE_INVENTORY`: `infrastructure/ansible/inventory.ini`
 - `ANSIBLE_PLAYBOOK`: `infrastructure/ansible/site.yml`
 - `ANSIBLE_TAGS`: empty (run full playbook)
+- `ANSIBLE_CREDENTIALS_ID`: empty (uses `/var/lib/jenkins/.ssh/id_rsa`); set to your Jenkins SSH credential ID to override.
 
 ### Troubleshooting
 - If smoke test fails, validate ports `3008/5001` are open and containers are healthy: `docker compose ps` on the droplet.

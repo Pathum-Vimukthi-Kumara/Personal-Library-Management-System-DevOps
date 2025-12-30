@@ -13,6 +13,7 @@ pipeline {
         string(name: 'ANSIBLE_INVENTORY', defaultValue: 'infrastructure/ansible/inventory.ini', description: 'Path to Ansible inventory in repo (DigitalOcean droplet)')
         string(name: 'ANSIBLE_PLAYBOOK', defaultValue: 'infrastructure/ansible/site.yml', description: 'Path to Ansible playbook in repo')
         string(name: 'ANSIBLE_TAGS', defaultValue: '', description: 'Ansible tags to run for deployment (optional)')
+        string(name: 'ANSIBLE_CREDENTIALS_ID', defaultValue: '', description: 'Jenkins SSH credential ID for Droplet (optional). If empty, uses /var/lib/jenkins/.ssh/id_rsa')
     }
 
     triggers {
@@ -25,6 +26,7 @@ pipeline {
         FRONTEND_DIR     = 'frontend/frontend'
         IMAGE_TAG_BUILD  = "${env.BUILD_NUMBER}"
         IMAGE_TAG_COMMIT = "${env.GIT_COMMIT?.take(12) ?: env.BUILD_NUMBER}"
+        DEFAULT_SSH_KEY  = '/var/lib/jenkins/.ssh/id_rsa'
     }
 
     stages {
@@ -79,30 +81,47 @@ pipeline {
         // Docker build and verification stages removed. Deployment is handled via Ansible.
 
                 stage('Deploy via Ansible') {
-                    steps {
-                        dir("${env.WORKSPACE}") {
-                            withCredentials([sshUserPrivateKey(credentialsId: 'do-ssh-key', keyFileVariable: 'SSH_KEY')]) {
-                                sh """
-                                    set -e
-                                    echo "=== Deploying via Ansible ==="
-                                    echo "Inventory: ${params.ANSIBLE_INVENTORY}"
-                                    echo "Playbook:  ${params.ANSIBLE_PLAYBOOK}"
-                                    echo "Tags:      ${params.ANSIBLE_TAGS}"
-                                    echo "Using SSH key: ${SSH_KEY}"
-                                    export ANSIBLE_HOST_KEY_CHECKING=False
-                                    # Run playbook with tags (if provided) and override SSH key and user
-                                    if [ -n "${params.ANSIBLE_TAGS}" ]; then
-                                        /usr/bin/ansible-playbook -i ${params.ANSIBLE_INVENTORY} ${params.ANSIBLE_PLAYBOOK} --tags ${params.ANSIBLE_TAGS} \
-                                        -e ansible_user=root -e ansible_ssh_private_key_file=${SSH_KEY} -e "ansible_ssh_common_args='-o StrictHostKeyChecking=no'"
-                                    else
-                                        /usr/bin/ansible-playbook -i ${params.ANSIBLE_INVENTORY} ${params.ANSIBLE_PLAYBOOK} \
-                                        -e ansible_user=root -e ansible_ssh_private_key_file=${SSH_KEY} -e "ansible_ssh_common_args='-o StrictHostKeyChecking=no'"
-                                    fi
-                                    echo "✓ Ansible deployment completed"
-                                """
-                            }
+                        steps {
+                                dir("${env.WORKSPACE}") {
+                                        script {
+                                            def cmd = '''
+                                                set -e
+                                                echo "=== Deploying via Ansible ==="
+                                                echo "Inventory: ${params.ANSIBLE_INVENTORY}"
+                                                echo "Playbook:  ${params.ANSIBLE_PLAYBOOK}"
+                                                echo "Tags:      ${params.ANSIBLE_TAGS}"
+                                                export ANSIBLE_HOST_KEY_CHECKING=False
+                                                if [ -n "${params.ANSIBLE_TAGS}" ]; then
+                                                    /usr/bin/ansible-playbook -i ${params.ANSIBLE_INVENTORY} ${params.ANSIBLE_PLAYBOOK} --tags ${params.ANSIBLE_TAGS} \
+                                                        -e ansible_user=root -e ansible_ssh_private_key_file=${KEY} -e "ansible_ssh_common_args='-o StrictHostKeyChecking=no'"
+                                                else
+                                                    /usr/bin/ansible-playbook -i ${params.ANSIBLE_INVENTORY} ${params.ANSIBLE_PLAYBOOK} \
+                                                        -e ansible_user=root -e ansible_ssh_private_key_file=${KEY} -e "ansible_ssh_common_args='-o StrictHostKeyChecking=no'"
+                                                fi
+                                                echo "✓ Ansible deployment completed"
+                                            '''
+                                            if (params.ANSIBLE_CREDENTIALS_ID?.trim()) {
+                                                withCredentials([sshUserPrivateKey(credentialsId: params.ANSIBLE_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY')]) {
+                                                    sh """
+                                                        KEY=${SSH_KEY}
+                                                        echo "Using Jenkins credential key: ${SSH_KEY}"
+                                                        ${cmd}
+                                                    """
+                                                }
+                                            } else {
+                                                sh """
+                                                    KEY=${env.DEFAULT_SSH_KEY}
+                                                    echo "Using default key: ${KEY}"
+                                                    if [ ! -f "${KEY}" ]; then
+                                                        echo "ERROR: SSH key not found at ${KEY}. Provide ANSIBLE_CREDENTIALS_ID or place key there."
+                                                        exit 1
+                                                    fi
+                                                    ${cmd}
+                                                """
+                                            }
+                                        }
+                                }
                         }
-                    }
                 }
 
                 stage('Smoke Test') {
