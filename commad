@@ -2,3 +2,4 @@ docker exec -it devops_project-mysql-1 mysql -u libraryuser -plibrarypass librar
 docker compose exec mysql mysql -u libraryuser -plibrarypass librarydb
 test 1
 docker compose exec mysql mysql -u libraryuser -plibrarypass librarydb
+ssh -i ~/.ssh/id_rsa root@143.244.146.122 "docker exec personal-library-mysql-1 mysql -u libraryuser -plibrarypass librarydb -e 'SELECT id, username, email FROM users;'"

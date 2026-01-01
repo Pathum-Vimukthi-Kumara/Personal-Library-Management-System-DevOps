@@ -31,7 +31,9 @@ public class LoginController {
                 return ResponseEntity.status(401).body(new ApiResponse("Invalid username or password"));
             }
         } catch (Exception e) {
-            return ResponseEntity.status(500).body(new ApiResponse("Login failed"));
+            e.printStackTrace();
+            System.err.println("Login error: " + e.getMessage());
+            return ResponseEntity.status(500).body(new ApiResponse("Login failed: " + e.getMessage()));
         }
     }
 

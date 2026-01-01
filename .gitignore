@@ -11,6 +11,8 @@ Backend/.env.local
 Backend/.env.production
 Backend/.env.development
 
+# Terraform local secrets (do not commit)
+infrastructure/terraform/secret.auto.tfvars
 # Frontend env files (keep .env.example tracked)
 frontend/frontend/.env
 frontend/frontend/.env.local

@@ -4,7 +4,6 @@
   roles:
     - setup
     - docker
-    - jenkins
     - app
     - nginx
 

@@ -22,9 +22,7 @@ resource "digitalocean_droplet" "web" {
   user_data = <<-EOF
     #!/bin/bash
     apt update
-    apt install -y docker.io docker-compose git
-    systemctl enable docker
-    systemctl start docker
+    apt install -y git
     useradd -m -s /bin/bash ansible
     mkdir -p /home/ansible/.ssh
     echo "${file(pathexpand(var.ssh_key_path))}" > /home/ansible/.ssh/authorized_keys
