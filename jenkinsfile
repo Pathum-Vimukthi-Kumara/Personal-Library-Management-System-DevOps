@@ -81,13 +81,10 @@ pipeline {
 
         stage('Deploy via Ansible') {
             steps {
-                dir("${env.WORKSPACE}") {
-                    script {
-                        echo "=== Deploying via Ansible ==="
-                        def tagsArg = params.ANSIBLE_TAGS?.trim() ? "--tags \"${params.ANSIBLE_TAGS}\"" : ""
-                        sh 'if [ ! -f "' + env.DEFAULT_SSH_KEY + '" ]; then echo "ERROR: SSH key not found at ' + env.DEFAULT_SSH_KEY + '"; exit 1; fi; echo "Running ansible-playbook with key ' + env.DEFAULT_SSH_KEY + '"; export ANSIBLE_HOST_KEY_CHECKING=False; ansible-playbook -i ' + params.ANSIBLE_INVENTORY + ' ' + params.ANSIBLE_PLAYBOOK + ' --private-key ' + env.DEFAULT_SSH_KEY + ' ' + tagsArg + ' -v && echo "✓ Ansible deployment completed"'
-                        }
-                    }
+                script {
+                    echo "=== Deploying via Ansible ==="
+                    def tagsArg = params.ANSIBLE_TAGS?.trim() ? "--tags \"${params.ANSIBLE_TAGS}\"" : ""
+                    sh 'if [ ! -f "' + env.DEFAULT_SSH_KEY + '" ]; then echo "ERROR: SSH key not found at ' + env.DEFAULT_SSH_KEY + '"; exit 1; fi; echo "Running ansible-playbook with key ' + env.DEFAULT_SSH_KEY + '"; export ANSIBLE_HOST_KEY_CHECKING=False; ansible-playbook -i ' + params.ANSIBLE_INVENTORY + ' ' + params.ANSIBLE_PLAYBOOK + ' --private-key ' + env.DEFAULT_SSH_KEY + ' ' + tagsArg + ' -v && echo "✓ Ansible deployment completed"'
                 }
             }
         }
