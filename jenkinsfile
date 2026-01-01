@@ -20,6 +20,8 @@ pipeline {
     triggers {
         // Trigger on GitHub push via webhook (configure in Jenkins)
         githubPush()
+        // Fallback: Poll GitHub every 5 minutes if webhook fails
+        pollSCM('H/5 * * * *')
     }
 
     environment {
