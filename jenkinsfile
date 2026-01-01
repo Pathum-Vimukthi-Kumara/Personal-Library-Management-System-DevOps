@@ -83,18 +83,7 @@ pipeline {
             }
         }
 
-        stage('Build Backend') {
-            steps {
-                dir("${env.BACKEND_DIR}") {
-                    sh """
-                        echo "=== Building Backend Application ==="
-                        chmod +x ./mvnw || true
-                        ./mvnw -B -DskipTests=true clean compile
-                        echo "✓ Backend build completed"
-                    """
-                }
-            }
-        }
+        // Skipping local backend build; deployment handled entirely by Ansible on target host.
 
         // Docker build and verification stages removed. Deployment is handled via Ansible.
 
