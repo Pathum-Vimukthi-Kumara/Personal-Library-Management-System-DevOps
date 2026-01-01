@@ -20,8 +20,7 @@ pipeline {
     triggers {
         // Trigger on GitHub push via webhook (configure in Jenkins)
         githubPush()
-        // Fallback: Poll GitHub every 5 minutes if webhook fails
-        pollSCM('H/5 * * * *')
+      
     }
 
     environment {
@@ -36,13 +35,13 @@ pipeline {
                 stage('Update Inventory from Terraform (optional)') {
                         steps {
                                 dir('infrastructure/terraform') {
-                                        sh """
+                                        sh '''
                                                 echo "=== Attempting to sync Ansible inventory with Terraform output ==="
                                                 if command -v terraform >/dev/null 2>&1; then
-                                                    TF_IP=$(terraform output -raw droplet_ip 2>/dev/null || true)
-                                                    if [ -n "$TF_IP" ]; then
-                                                        echo "Terraform reported droplet IP: $TF_IP"
-                                                        sed -i "s/^[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+/$TF_IP/" ../ansible/inventory.ini || true
+                                                    TF_IP=\$(terraform output -raw droplet_ip 2>/dev/null || true)
+                                                    if [ -n "\$TF_IP" ]; then
+                                                        echo "Terraform reported droplet IP: \$TF_IP"
+                                                        sed -i "s/^[0-9]\\+\\.[0-9]\\+\\.[0-9]\\+\\.[0-9]\\+/\$TF_IP/" ../ansible/inventory.ini || true
                                                         echo "✓ Updated infrastructure/ansible/inventory.ini"
                                                     else
                                                         echo "Terraform output not available; skipping inventory update"
@@ -50,39 +49,20 @@ pipeline {
                                                 else
                                                     echo "Terraform not installed on Jenkins agent; skipping inventory sync"
                                                 fi
-                                        """
+                                        '''
                                 }
                         }
                 }
         stage('Checkout & Setup') {
             steps {
                 checkout scm
-                sh """
-                    echo "=== Setting up workspace ==="
-                    chmod +x ${env.BACKEND_DIR}/mvnw || true
-                    echo "✓ Checkout completed"
-                """
+                sh 'echo "=== Setting up workspace ==="; chmod +x ' + env.BACKEND_DIR + '/mvnw || true; echo "✓ Checkout completed"'
             }
         }
 
         stage('Verify Environment') {
             steps {
-                sh """
-                    echo "=== Environment Verification ==="
-                    echo "Workspace: ${env.WORKSPACE}"
-                    echo "Git Commit: ${env.GIT_COMMIT}"
-                    echo "Backend Dir: ${env.BACKEND_DIR}"
-                    echo "Frontend Dir: ${env.FRONTEND_DIR}"
-
-                    echo "=== Directory Structure ==="
-                    ls -la ${env.BACKEND_DIR}/ || echo "Backend directory not found"
-                    echo "Frontend contents:"
-                    ls -la ${env.FRONTEND_DIR}/ || echo "Frontend directory not found"
-
-                    echo "=== Tools Verification ==="
-                    docker --version || echo "Docker not available"
-                    echo "✓ Environment verification completed"
-                """
+                sh 'echo "=== Environment Verification ==="; echo "Workspace: ' + env.WORKSPACE + '"; echo "Git Commit: ' + env.GIT_COMMIT + '"; echo "Backend Dir: ' + env.BACKEND_DIR + '"; echo "Frontend Dir: ' + env.FRONTEND_DIR + '"; echo "=== Directory Structure ==="; ls -la ' + env.BACKEND_DIR + '/ || echo "Backend directory not found"; echo "Frontend contents:"; ls -la ' + env.FRONTEND_DIR + '/ || echo "Frontend directory not found"; echo "=== Tools Verification ==="; docker --version || echo "Docker not available"; echo "✓ Environment verification completed"'
             }
         }
 
