@@ -70,7 +70,14 @@ pipeline {
             steps {
                 script {
                     echo "=== Testing SSH connectivity with Ansible ping ==="
-                    sh 'if [ -f "' + env.DEFAULT_SSH_KEY + '" ]; then echo "Testing SSH with key at ' + env.DEFAULT_SSH_KEY + '"; ansible --version || (echo "Ansible not installed" && exit 1); ansible -i ' + params.ANSIBLE_INVENTORY + ' app -m ping --private-key ' + env.DEFAULT_SSH_KEY + ' --ssh-common-args="-o StrictHostKeyChecking=no" && echo "✓ SSH connectivity OK" || (echo "WARN: SSH connectivity failed" && exit 0); else echo "ERROR: SSH key not found at ' + env.DEFAULT_SSH_KEY + '"; exit 1; fi'
+                    def credId = params.ANSIBLE_CREDENTIALS_ID?.trim()
+                    if (credId) {
+                        withCredentials([sshUserPrivateKey(credentialsId: credId, keyFileVariable: 'SSH_KEY')]) {
+                            sh 'ansible --version || (echo "Ansible not installed" && exit 1); ansible -i ' + params.ANSIBLE_INVENTORY + ' app -m ping --private-key $SSH_KEY --ssh-common-args="-o StrictHostKeyChecking=no" && echo "✓ SSH connectivity OK" || (echo "WARN: SSH connectivity failed" && exit 0)'
+                        }
+                    } else {
+                        sh 'if [ -f "' + env.DEFAULT_SSH_KEY + '" ]; then echo "Testing SSH with key at ' + env.DEFAULT_SSH_KEY + '"; ansible --version || (echo "Ansible not installed" && exit 1); ansible -i ' + params.ANSIBLE_INVENTORY + ' app -m ping --private-key ' + env.DEFAULT_SSH_KEY + ' --ssh-common-args="-o StrictHostKeyChecking=no" && echo "✓ SSH connectivity OK" || (echo "WARN: SSH connectivity failed" && exit 0); else echo "ERROR: SSH key not found at ' + env.DEFAULT_SSH_KEY + '"; exit 1; fi'
+                    }
                 }
             }
         }
@@ -84,7 +91,14 @@ pipeline {
                 script {
                     echo "=== Deploying via Ansible ==="
                     def tagsArg = params.ANSIBLE_TAGS?.trim() ? "--tags \"${params.ANSIBLE_TAGS}\"" : ""
-                    sh 'if [ ! -f "' + env.DEFAULT_SSH_KEY + '" ]; then echo "ERROR: SSH key not found at ' + env.DEFAULT_SSH_KEY + '"; exit 1; fi; echo "Running ansible-playbook with key ' + env.DEFAULT_SSH_KEY + '"; export ANSIBLE_HOST_KEY_CHECKING=False; ansible-playbook -i ' + params.ANSIBLE_INVENTORY + ' ' + params.ANSIBLE_PLAYBOOK + ' --private-key ' + env.DEFAULT_SSH_KEY + ' ' + tagsArg + ' -v && echo "✓ Ansible deployment completed"'
+                    def credId = params.ANSIBLE_CREDENTIALS_ID?.trim()
+                    if (credId) {
+                        withCredentials([sshUserPrivateKey(credentialsId: credId, keyFileVariable: 'SSH_KEY')]) {
+                            sh 'ansible-playbook -i ' + params.ANSIBLE_INVENTORY + ' ' + params.ANSIBLE_PLAYBOOK + ' --private-key $SSH_KEY ' + tagsArg + ' -v && echo "✓ Ansible deployment completed"'
+                        }
+                    } else {
+                        sh 'if [ ! -f "' + env.DEFAULT_SSH_KEY + '" ]; then echo "ERROR: SSH key not found at ' + env.DEFAULT_SSH_KEY + '"; exit 1; fi; echo "Running ansible-playbook with key ' + env.DEFAULT_SSH_KEY + '"; export ANSIBLE_HOST_KEY_CHECKING=False; ansible-playbook -i ' + params.ANSIBLE_INVENTORY + ' ' + params.ANSIBLE_PLAYBOOK + ' --private-key ' + env.DEFAULT_SSH_KEY + ' ' + tagsArg + ' -v && echo "✓ Ansible deployment completed"'
+                    }
                 }
             }
         }
