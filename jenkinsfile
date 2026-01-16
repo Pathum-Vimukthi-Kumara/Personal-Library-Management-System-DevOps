@@ -114,7 +114,9 @@ pipeline {
                                 git fetch origin ${params.BRANCH}
                                 git reset --hard origin/${params.BRANCH}
                                 docker compose -f ${params.COMPOSE_FILE} down || true
-                                docker compose -f ${params.COMPOSE_FILE} up -d --build
+                                    # Rebuild images pulling latest base layers
+                                    docker compose -f ${params.COMPOSE_FILE} build --pull
+                                    docker compose -f ${params.COMPOSE_FILE} up -d
                                 sudo systemctl restart nginx || true
                             '"
                         """

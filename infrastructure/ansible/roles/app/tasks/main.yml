@@ -39,8 +39,16 @@
 
 - name: Bring up services with Docker Compose
   ansible.builtin.shell: |
-    # Always build from local source to deploy latest changes from Git
-    docker compose -f /opt/personal-library/compose.yaml up -d --build
+    # Rebuild images pulling latest base layers
+    docker compose -f /opt/personal-library/compose.yaml build --pull
+    docker compose -f /opt/personal-library/compose.yaml up -d
   args:
     chdir: /opt/personal-library
+  become: true
+
+- name: Restart nginx to pick up latest config/routes
+  ansible.builtin.service:
+    name: nginx
+    state: restarted
+    enabled: true
   become: true
