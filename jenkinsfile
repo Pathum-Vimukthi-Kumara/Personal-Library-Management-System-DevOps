@@ -44,28 +44,20 @@ pipeline {
         stage('Deploy: Git Pull + Docker Compose (Remote)') {
             steps {
                 script {
+                    def host = params.DROPLET_HOST?.trim()
+                    def user = params.SSH_USER?.trim()
+                    def remoteDir = params.REMOTE_DIR?.trim()
+                    def composeFile = params.COMPOSE_FILE?.trim()
+                    def branch = params.BRANCH?.trim()
+                    if (!host || !user) {
+                        error "Missing SSH parameters: DROPLET_HOST='${host}', SSH_USER='${user}'"
+                    }
                     withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY')]) {
-                        sh '''
+                        sh """
                             set -e
-                            echo "=== Deploying to ${DROPLET_HOST} ==="
-                            REMOTE_CMD=$(cat <<'RCMD'
-set -e
-echo "User: $(whoami)"
-cd ${REMOTE_DIR}
-echo "PWD: $(pwd)"
-git fetch origin ${BRANCH}
-git reset --hard origin/${BRANCH}
-echo "Bringing containers down (if any)..."
-docker compose -f ${COMPOSE_FILE} down || true
-echo "Building and starting containers..."
-docker compose -f ${COMPOSE_FILE} up -d --build
-echo "Restarting nginx (if present)..."
-sudo systemctl restart nginx || true
-echo "=== Deploy complete ==="
-RCMD
-)
-                            ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no ${SSH_USER}@${DROPLET_HOST} "bash -lc \"${REMOTE_CMD}\""
-                        '''
+                            echo "=== Deploying to ${host} as ${user} ==="
+                            ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no ${user}@${host} "bash -lc 'set -e; cd ${remoteDir}; git fetch origin ${branch}; git reset --hard origin/${branch}; docker compose -f ${composeFile} down || true; docker compose -f ${composeFile} up -d --build; sudo systemctl restart nginx || true'"
+                        """
                     }
                 }
             }
