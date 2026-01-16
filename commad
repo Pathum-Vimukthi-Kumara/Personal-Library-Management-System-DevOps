@@ -3,3 +3,9 @@ docker compose exec mysql mysql -u libraryuser -plibrarypass librarydb
 test 1
 docker compose exec mysql mysql -u libraryuser -plibrarypass librarydb
 ssh -i ~/.ssh/id_rsa root@143.244.146.122 "docker exec personal-library-mysql-1 mysql -u libraryuser -plibrarypass librarydb -e 'SELECT id, username, email FROM users;'"
+
+create digital ocean droplet
+wsl bash -lc 'cd /mnt/h/5th\ sem\ academic/DevOps_Project/infrastructure/terraform; terraform init -input=false; terraform plan -target=digitalocean_droplet.web; terraform apply -target=digitalocean_droplet.web -auto-approve; terraform output droplet_ip'
+
+ansible run
+bash -lc 'cd "/mnt/h/5th sem academic/DevOps_Project/infrastructure/ansible"; ansible-playbook -i inventory.ini site.yml -vv'

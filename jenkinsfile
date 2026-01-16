@@ -1,103 +1,71 @@
-pipeline { 
+pipeline {
     agent any
 
     options {
         timestamps()
         disableConcurrentBuilds()
-        buildDiscarder(logRotator(numToKeepStr: '15'))
+        buildDiscarder(logRotator(numToKeepStr: '20'))
         parallelsAlwaysFailFast()
     }
 
     parameters {
-        string(name: 'COMPOSE_DIR', defaultValue: '/opt/personal-library', description: 'Directory on server containing compose files')
-        string(name: 'ANSIBLE_INVENTORY', defaultValue: 'infrastructure/ansible/inventory.ini', description: 'Path to Ansible inventory in repo (DigitalOcean droplet)')
-        string(name: 'ANSIBLE_PLAYBOOK', defaultValue: 'infrastructure/ansible/site.yml', description: 'Path to Ansible playbook in repo')
-        string(name: 'ANSIBLE_TAGS', defaultValue: '', description: 'Ansible tags to run for deployment (optional)')
-        string(name: 'ANSIBLE_CREDENTIALS_ID', defaultValue: 'do-ssh-key', description: 'Jenkins SSH credential ID for Droplet (optional). If empty, uses /var/lib/jenkins/.ssh/id_rsa')
-        string(name: 'ANSIBLE_FALLBACK_KEY_PATH', defaultValue: '/var/lib/jenkins/.ssh/id_rsa', description: 'Fallback private key path on Jenkins agent for Ansible (PEM, unencrypted)')
+        string(name: 'DROPLET_HOST', defaultValue: '143.198.162.25', description: 'DigitalOcean droplet IP or hostname')
+        string(name: 'SSH_USER', defaultValue: 'ansible', description: 'SSH user on droplet')
+        string(name: 'SSH_CREDENTIALS_ID', defaultValue: 'do-ssh-key', description: 'Jenkins SSH credential ID (Private Key)')
+        string(name: 'REMOTE_DIR', defaultValue: '/opt/personal-library', description: 'Remote directory with compose files')
+        string(name: 'COMPOSE_FILE', defaultValue: 'compose.yaml', description: 'Compose file to use (compose.yaml or compose.prod.yaml)')
+        string(name: 'BRANCH', defaultValue: 'master', description: 'Git branch to deploy')
     }
 
     triggers {
-        // Trigger on GitHub push via webhook (configure in Jenkins)
+        // Trigger via GitHub webhook on push
         githubPush()
-      
     }
 
     environment {
-        BACKEND_DIR      = 'Backend'
-        FRONTEND_DIR     = 'frontend/frontend'
-        IMAGE_TAG_BUILD  = "${env.BUILD_NUMBER}"
-        IMAGE_TAG_COMMIT = "${env.GIT_COMMIT?.take(12) ?: env.BUILD_NUMBER}"
-        DEFAULT_SSH_KEY  = "${params.ANSIBLE_FALLBACK_KEY_PATH}"
+        BACKEND_DIR  = 'Backend'
+        FRONTEND_DIR = 'frontend/frontend'
     }
 
     stages {
-                stage('Update Inventory from Terraform (optional)') {
-                        steps {
-                                dir('infrastructure/terraform') {
-                                        sh '''
-                                                echo "=== Attempting to sync Ansible inventory with Terraform output ==="
-                                                if command -v terraform >/dev/null 2>&1; then
-                                                    TF_IP=\$(terraform output -raw droplet_ip 2>/dev/null || true)
-                                                    if [ -n "\$TF_IP" ]; then
-                                                        echo "Terraform reported droplet IP: \$TF_IP"
-                                                        sed -i "s/^[0-9]\\+\\.[0-9]\\+\\.[0-9]\\+\\.[0-9]\\+/\$TF_IP/" ../ansible/inventory.ini || true
-                                                        echo "✓ Updated infrastructure/ansible/inventory.ini"
-                                                    else
-                                                        echo "Terraform output not available; skipping inventory update"
-                                                    fi
-                                                else
-                                                    echo "Terraform not installed on Jenkins agent; skipping inventory sync"
-                                                fi
-                                        '''
-                                }
-                        }
-                }
-        stage('Checkout & Setup') {
+        stage('Checkout') {
             steps {
                 checkout scm
-                sh 'echo "=== Setting up workspace ==="; chmod +x ' + env.BACKEND_DIR + '/mvnw || true; echo "✓ Checkout completed"'
+                sh 'echo "✓ Code checked out"'
             }
         }
 
-        stage('Verify Environment') {
+        stage('Verify Workspace') {
             steps {
-                sh 'echo "=== Environment Verification ==="; echo "Workspace: ' + env.WORKSPACE + '"; echo "Git Commit: ' + env.GIT_COMMIT + '"; echo "Backend Dir: ' + env.BACKEND_DIR + '"; echo "Frontend Dir: ' + env.FRONTEND_DIR + '"; echo "=== Directory Structure ==="; ls -la ' + env.BACKEND_DIR + '/ || echo "Backend directory not found"; echo "Frontend contents:"; ls -la ' + env.FRONTEND_DIR + '/ || echo "Frontend directory not found"; echo "=== Tools Verification ==="; docker --version || echo "Docker not available"; echo "✓ Environment verification completed"'
+                sh 'echo "Backend dir:"; ls -la ${BACKEND_DIR} || true; echo "Frontend dir:"; ls -la ${FRONTEND_DIR} || true'
             }
         }
 
-        stage('SSH Connectivity') {
-            steps {
-                script {
-                    echo "=== Testing SSH connectivity with Ansible ping ==="
-                    def credId = params.ANSIBLE_CREDENTIALS_ID?.trim()
-                    if (credId) {
-                        withCredentials([sshUserPrivateKey(credentialsId: credId, keyFileVariable: 'SSH_KEY')]) {
-                            sh 'set -e; TMP_KEY=$(mktemp /tmp/sshkey.XXXXXX); cp "${SSH_KEY}" "$TMP_KEY"; chmod 600 "$TMP_KEY"; ansible --version || (echo "Ansible not installed" && exit 1); ansible -i ' + params.ANSIBLE_INVENTORY + ' app -m ping --private-key "$TMP_KEY" -e ansible_ssh_private_key_file="$TMP_KEY" --ssh-common-args="-o StrictHostKeyChecking=no" && echo "✓ SSH connectivity OK" || (echo "WARN: SSH connectivity failed" && exit 0); rm -f "$TMP_KEY"'
-                        }
-                    } else {
-                        sh 'if [ -f "' + env.DEFAULT_SSH_KEY + '" ]; then echo "Testing SSH with key at ' + env.DEFAULT_SSH_KEY + '"; ansible --version || (echo "Ansible not installed" && exit 1); ansible -i ' + params.ANSIBLE_INVENTORY + ' app -m ping --private-key ' + env.DEFAULT_SSH_KEY + ' --ssh-common-args="-o StrictHostKeyChecking=no" && echo "✓ SSH connectivity OK" || (echo "WARN: SSH connectivity failed" && exit 0); else echo "ERROR: SSH key not found at ' + env.DEFAULT_SSH_KEY + '"; exit 1; fi'
-                    }
-                }
-            }
-        }
-
-        // Skipping local backend build; deployment handled entirely by Ansible on target host.
-
-        // Docker build and verification stages removed. Deployment is handled via Ansible.
-
-        stage('Deploy via Ansible') {
+        stage('Deploy: Git Pull + Docker Compose (Remote)') {
             steps {
                 script {
-                    echo "=== Deploying via Ansible ==="
-                    def tagsArg = params.ANSIBLE_TAGS?.trim() ? "--tags \"${params.ANSIBLE_TAGS}\"" : ""
-                    def credId = params.ANSIBLE_CREDENTIALS_ID?.trim()
-                    if (credId) {
-                        withCredentials([sshUserPrivateKey(credentialsId: credId, keyFileVariable: 'SSH_KEY')]) {
-                            sh 'set -e; TMP_KEY=$(mktemp /tmp/sshkey.XXXXXX); cp "${SSH_KEY}" "$TMP_KEY"; chmod 600 "$TMP_KEY"; ansible-playbook -i ' + params.ANSIBLE_INVENTORY + ' ' + params.ANSIBLE_PLAYBOOK + ' --private-key "$TMP_KEY" -e ansible_ssh_private_key_file="$TMP_KEY" ' + tagsArg + ' -v && echo "✓ Ansible deployment completed"; rm -f "$TMP_KEY"'
-                        }
-                    } else {
-                        sh 'if [ ! -f "' + env.DEFAULT_SSH_KEY + '" ]; then echo "ERROR: SSH key not found at ' + env.DEFAULT_SSH_KEY + '"; exit 1; fi; echo "Running ansible-playbook with key ' + env.DEFAULT_SSH_KEY + '"; export ANSIBLE_HOST_KEY_CHECKING=False; ansible-playbook -i ' + params.ANSIBLE_INVENTORY + ' ' + params.ANSIBLE_PLAYBOOK + ' --private-key ' + env.DEFAULT_SSH_KEY + ' ' + tagsArg + ' -v && echo "✓ Ansible deployment completed"'
+                    withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY')]) {
+                        sh '''
+                            set -e
+                            echo "=== Deploying to ${DROPLET_HOST} ==="
+                            REMOTE_CMD=$(cat <<'RCMD'
+set -e
+echo "User: $(whoami)"
+cd ${REMOTE_DIR}
+echo "PWD: $(pwd)"
+git fetch origin ${BRANCH}
+git reset --hard origin/${BRANCH}
+echo "Bringing containers down (if any)..."
+docker compose -f ${COMPOSE_FILE} down || true
+echo "Building and starting containers..."
+docker compose -f ${COMPOSE_FILE} up -d --build
+echo "Restarting nginx (if present)..."
+sudo systemctl restart nginx || true
+echo "=== Deploy complete ==="
+RCMD
+)
+                            ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no ${SSH_USER}@${DROPLET_HOST} "bash -lc \"${REMOTE_CMD}\""
+                        '''
                     }
                 }
             }
@@ -105,57 +73,21 @@ pipeline {
 
         stage('Smoke Test') {
             steps {
-                script {
-                    def inv = readFile('infrastructure/ansible/inventory.ini')
-                    def lines = inv.readLines()
-                    def dropletIp = ''
-                    def inApp = false
-                    for (def raw : lines) {
-                        def l = raw.trim()
-                        if (l.startsWith('[')) {
-                            inApp = (l == '[app]')
-                            continue
-                        }
-                        if (inApp && l && !l.startsWith('#') && !l.startsWith('[')) {
-                            dropletIp = l.split(/\s+/)[0]
-                            break
-                        }
-                    }
-                    if (!dropletIp) {
-                        error 'Droplet IP not found in inventory [app] group'
-                    }
-                    env.DROPLET_IP = dropletIp
-                }
                 sh '''
-                    echo "=== Smoke Test ==="
-                    echo "Checking frontend at http://\${DROPLET_IP}:3008"
-                    curl -sSf -m 20 http://\${DROPLET_IP}:3008 | head -c 200 > /dev/null
-                    echo "✓ Frontend reachable"
-                    echo "Checking backend health at http://\${DROPLET_IP}:5001/actuator/health (optional)"
-                    curl -s -m 10 http://\${DROPLET_IP}:5001/actuator/health || true
+                    echo "Testing HTTP on http://${DROPLET_HOST}"
+                    curl -sSf -m 20 http://${DROPLET_HOST} -I || true
+                    echo "Checking frontend port 3008"
+                    curl -sSf -m 20 http://${DROPLET_HOST}:3008 | head -c 200 || true
+                    echo "Checking backend health on 5001 (optional)"
+                    curl -s -m 10 http://${DROPLET_HOST}:5001/actuator/health || true
                 '''
             }
         }
     }
 
     post {
-        success {
-            echo 'PIPELINE SUCCESSFUL!'
-        }
-        failure {
-            echo 'PIPELINE FAILED!'
-            sh '''
-                echo "=== Debug Information ==="
-                echo "Current directory:"
-                pwd
-                ls -la
-            '''
-        }
-        always {
-            echo '=== Post Build Cleanup ==='
-            sh '''
-                echo "No Docker cleanup required for Ansible-only pipeline"
-            '''
-        }
+        success { echo 'PIPELINE SUCCESSFUL!' }
+        failure { echo 'PIPELINE FAILED!' }
+        always  { echo '=== Pipeline finished ===' }
     }
 }
