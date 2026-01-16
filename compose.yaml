@@ -8,8 +8,6 @@ services:
       MYSQL_DATABASE: librarydb
       MYSQL_USER: libraryuser
       MYSQL_PASSWORD: librarypass
-    ports:
-      - "3306:3306"
     volumes:
       - db_store:/var/lib/mysql
       - ./db-init.sql:/docker-entrypoint-initdb.d/01-init.sql
