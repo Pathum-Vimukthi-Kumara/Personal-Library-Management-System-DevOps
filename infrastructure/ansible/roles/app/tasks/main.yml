@@ -37,6 +37,24 @@
     chdir: /opt/personal-library
   become: true
 
+- name: Ensure JWT secret is 256-bit and expiration set in Backend/.env
+  ansible.builtin.shell: |
+    # Set or update JWT_SECRET to a strong 256-bit value
+    if grep -q '^JWT_SECRET=' Backend/.env; then
+      sed -i 's/^JWT_SECRET=.*/JWT_SECRET=mySecretKey1234567890123456789012345678901234567890SecureKey256Bits/' Backend/.env
+    else
+      echo 'JWT_SECRET=mySecretKey1234567890123456789012345678901234567890SecureKey256Bits' >> Backend/.env
+    fi
+    # Set or update JWT_EXPIRATION to 24h
+    if grep -q '^JWT_EXPIRATION=' Backend/.env; then
+      sed -i 's/^JWT_EXPIRATION=.*/JWT_EXPIRATION=86400000/' Backend/.env
+    else
+      echo 'JWT_EXPIRATION=86400000' >> Backend/.env
+    fi
+  args:
+    chdir: /opt/personal-library
+  become: true
+
 - name: Bring up services with Docker Compose
   ansible.builtin.shell: |
     # Rebuild images pulling latest base layers
