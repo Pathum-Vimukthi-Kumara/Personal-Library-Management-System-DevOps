@@ -54,12 +54,13 @@ pipeline {
                     def tagsArg = tags ? "--tags \"${tags}\"" : ""
                     // Run Ansible only if installed on Jenkins controller
                     sh 'if ! command -v ansible-playbook >/dev/null 2>&1; then echo "Ansible not installed on Jenkins controller; skipping provisioning stage"; exit 0; fi'
-                    withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY')]) {
+                    sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
                         sh """
                             set -e
                             echo "=== Provisioning via Ansible ==="
                             export ANSIBLE_HOST_KEY_CHECKING=False
-                            ansible-playbook -i ${inv} ${play} --private-key "${SSH_KEY}" -e ansible_ssh_private_key_file="${SSH_KEY}" ${tagsArg} -vv || echo "WARN: Ansible provisioning encountered issues"
+                            # Use ssh-agent provided key; no --private-key needed
+                            ansible-playbook -i ${inv} ${play} ${tagsArg} -vv || echo "WARN: Ansible provisioning encountered issues"
                         """
                     }
                 }
@@ -77,11 +78,11 @@ pipeline {
                     if (!host || !user) {
                         error "Missing SSH parameters: DROPLET_HOST='${host}', SSH_USER='${user}'"
                     }
-                    withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY')]) {
+                    sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
                         sh """
                             set -e
                             echo "=== Deploying to ${host} as ${user} ==="
-                            ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no ${user}@${host} "bash -lc 'set -e; \
+                            ssh -o StrictHostKeyChecking=no ${user}@${host} "bash -lc 'set -e; \
                                 # Ensure repo ownership matches SSH user to avoid Git dubious ownership
                                 sudo chown -R ${user}:${user} ${remoteDir} || true; \
                                 # Allow Git to operate in this directory
@@ -107,8 +108,13 @@ pipeline {
                     curl -sSf -m 20 http://${DROPLET_HOST} -I || true
                     echo "Checking frontend port 3008"
                     curl -sSf -m 20 http://${DROPLET_HOST}:3008 | head -c 200 || true
-                    echo "Checking backend health on 5001 (optional)"
-                    curl -s -m 10 http://${DROPLET_HOST}:5001/actuator/health || true
+                    echo "Waiting for backend health on 5001"
+                    for i in $(seq 1 60); do
+                      resp=$(curl -s -m 5 http://${DROPLET_HOST}:5001/actuator/health || true)
+                      echo "$resp" | grep -q '"status"\s*:\s*"UP"' && { echo "Backend is UP"; break; }
+                      sleep 2
+                    done
+                    echo "Backend health response:"; curl -s -m 10 http://${DROPLET_HOST}:5001/actuator/health || true
                 '''
             }
         }
