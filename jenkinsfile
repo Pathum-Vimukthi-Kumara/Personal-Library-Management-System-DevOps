@@ -54,14 +54,14 @@ pipeline {
                     def tagsArg = tags ? "--tags \"${tags}\"" : ""
                     // Run Ansible only if installed on Jenkins controller
                     sh 'if ! command -v ansible-playbook >/dev/null 2>&1; then echo "Ansible not installed on Jenkins controller; skipping provisioning stage"; exit 0; fi'
-                    sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
-                        sh """
+                    withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY')]) {
+                        sh '''
                             set -e
                             echo "=== Provisioning via Ansible ==="
                             export ANSIBLE_HOST_KEY_CHECKING=False
-                            # Use ssh-agent provided key; no --private-key needed
-                            ansible-playbook -i ${inv} ${play} ${tagsArg} -vv || echo "WARN: Ansible provisioning encountered issues"
-                        """
+                            # Use bound SSH key file via $SSH_KEY
+                            ansible-playbook -i ${inv} ${play} --private-key "$SSH_KEY" -e ansible_ssh_private_key_file="$SSH_KEY" ${tagsArg} -vv || echo "WARN: Ansible provisioning encountered issues"
+                        '''
                     }
                 }
             }
@@ -78,11 +78,11 @@ pipeline {
                     if (!host || !user) {
                         error "Missing SSH parameters: DROPLET_HOST='${host}', SSH_USER='${user}'"
                     }
-                    sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
-                        sh """
+                    withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY')]) {
+                        sh '''
                             set -e
                             echo "=== Deploying to ${host} as ${user} ==="
-                            ssh -o StrictHostKeyChecking=no ${user}@${host} "bash -lc 'set -e; \
+                            ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no ${user}@${host} "bash -lc 'set -e; \
                                 # Ensure repo ownership matches SSH user to avoid Git dubious ownership
                                 sudo chown -R ${user}:${user} ${remoteDir} || true; \
                                 # Allow Git to operate in this directory
@@ -95,7 +95,7 @@ pipeline {
                                 docker compose -f ${composeFile} down || true; \
                                 docker compose -f ${composeFile} up -d --build; \
                                 sudo systemctl restart nginx || true'"
-                        """
+                        '''
                     }
                 }
             }
