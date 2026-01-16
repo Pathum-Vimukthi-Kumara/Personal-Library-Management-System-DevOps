@@ -22,7 +22,7 @@ pipeline {
         string(name: 'ANSIBLE_TAGS', defaultValue: 'app', description: 'Ansible tags to run')
 
         // Optional SSH fallback
-        booleanParam(name: 'ENABLE_SSH_DEPLOY', defaultValue: false, description: 'Enable SSH-based deploy (fallback)')
+        booleanParam(name: 'ENABLE_SSH_DEPLOY', defaultValue: true, description: 'Enable SSH-based deploy (fallback)')
     }
 
     triggers {
