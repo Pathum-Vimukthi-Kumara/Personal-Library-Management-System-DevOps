@@ -18,7 +18,9 @@ pipeline {
         // Ansible-related (optional)
         string(name: 'ANSIBLE_INVENTORY', defaultValue: 'infrastructure/ansible/inventory.ini', description: 'Path to Ansible inventory in repo')
         string(name: 'ANSIBLE_PLAYBOOK', defaultValue: 'infrastructure/ansible/site.yml', description: 'Path to Ansible playbook in repo')
-        string(name: 'ANSIBLE_TAGS', defaultValue: '', description: 'Optional Ansible tags (e.g., setup,docker,app,nginx)')
+        string(name: 'ANSIBLE_TAGS', defaultValue: 'app', description: 'Ansible tags to run (use app to docker build+up)')
+        // Control whether SSH deploy runs (default off)
+        booleanParam(name: 'ENABLE_SSH_DEPLOY', defaultValue: false, description: 'Run SSH-based deploy stage (disabled to use Ansible only)')
     }
 
     triggers {
@@ -52,10 +54,10 @@ pipeline {
                     def play = params.ANSIBLE_PLAYBOOK?.trim()
                     def tags = params.ANSIBLE_TAGS?.trim()
                     def tagsArg = tags ? "--tags \"${tags}\"" : ""
-                    // Run Ansible only if installed on Jenkins controller
+                    // Require Ansible on Jenkins controller for Ansible-only deploy
                     def hasAnsible = sh(script: 'command -v ansible-playbook >/dev/null 2>&1', returnStatus: true) == 0
                     if (!hasAnsible) {
-                        echo 'Ansible not installed on Jenkins controller; skipping provisioning stage'
+                        error 'Ansible not installed on Jenkins controller. Install with: sudo apt-get update && sudo apt-get install -y ansible'
                     } else {
                         withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY')]) {
                             sh """
@@ -74,6 +76,10 @@ pipeline {
         stage('Deploy: Git Pull + Docker Compose (Remote)') {
             steps {
                 script {
+                    if (!params.ENABLE_SSH_DEPLOY) {
+                        echo 'SSH deploy disabled (Ansible-only mode). Skipping.'
+                        return
+                    }
                     def host = params.DROPLET_HOST?.trim()
                     def user = params.SSH_USER?.trim()
                     def remoteDir = params.REMOTE_DIR?.trim()
