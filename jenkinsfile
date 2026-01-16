@@ -111,7 +111,7 @@ pipeline {
                     echo "Waiting for backend health on 5001"
                     for i in $(seq 1 60); do
                       resp=$(curl -s -m 5 http://${DROPLET_HOST}:5001/actuator/health || true)
-                      echo "$resp" | grep -q '"status"\s*:\s*"UP"' && { echo "Backend is UP"; break; }
+                          echo "$resp" | grep -q '"status":"UP"' && { echo "Backend is UP"; break; }
                       sleep 2
                     done
                     echo "Backend health response:"; curl -s -m 10 http://${DROPLET_HOST}:5001/actuator/health || true
