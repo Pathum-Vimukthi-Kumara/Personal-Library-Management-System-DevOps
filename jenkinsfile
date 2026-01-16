@@ -56,7 +56,19 @@ pipeline {
                         sh """
                             set -e
                             echo "=== Deploying to ${host} as ${user} ==="
-                            ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no ${user}@${host} "bash -lc 'set -e; cd ${remoteDir}; git fetch origin ${branch}; git reset --hard origin/${branch}; docker compose -f ${composeFile} down || true; docker compose -f ${composeFile} up -d --build; sudo systemctl restart nginx || true'"
+                            ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no ${user}@${host} "bash -lc 'set -e; \
+                                # Ensure repo ownership matches SSH user to avoid Git dubious ownership
+                                sudo chown -R ${user}:${user} ${remoteDir} || true; \
+                                # Allow Git to operate in this directory
+                                git config --global --add safe.directory ${remoteDir}; \
+                                cd ${remoteDir}; \
+                                # Make sure remote is set (optional, harmless if already configured)
+                                git remote set-url origin https://github.com/Pathum-Vimukthi-Kumara/Personal-Library-Management-System-DevOps.git || true; \
+                                git fetch origin ${branch}; \
+                                git reset --hard origin/${branch}; \
+                                docker compose -f ${composeFile} down || true; \
+                                docker compose -f ${composeFile} up -d --build; \
+                                sudo systemctl restart nginx || true'"
                         """
                     }
                 }
