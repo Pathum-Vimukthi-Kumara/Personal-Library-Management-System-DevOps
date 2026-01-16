@@ -13,18 +13,19 @@ pipeline {
         string(name: 'SSH_USER', defaultValue: 'ansible', description: 'SSH user on droplet')
         string(name: 'SSH_CREDENTIALS_ID', defaultValue: 'do-ssh-key', description: 'Jenkins SSH credential ID (Private Key)')
         string(name: 'REMOTE_DIR', defaultValue: '/opt/personal-library', description: 'Remote directory with compose files')
-        string(name: 'COMPOSE_FILE', defaultValue: 'compose.yaml', description: 'Compose file to use (compose.yaml or compose.prod.yaml)')
+        string(name: 'COMPOSE_FILE', defaultValue: 'compose.yaml', description: 'Compose file to use')
         string(name: 'BRANCH', defaultValue: 'master', description: 'Git branch to deploy')
-        // Ansible-related (optional)
-        string(name: 'ANSIBLE_INVENTORY', defaultValue: 'infrastructure/ansible/inventory.ini', description: 'Path to Ansible inventory in repo')
-        string(name: 'ANSIBLE_PLAYBOOK', defaultValue: 'infrastructure/ansible/site.yml', description: 'Path to Ansible playbook in repo')
-        string(name: 'ANSIBLE_TAGS', defaultValue: 'app', description: 'Ansible tags to run (use app to docker build+up)')
-        // Control whether SSH deploy runs (default off)
-        booleanParam(name: 'ENABLE_SSH_DEPLOY', defaultValue: false, description: 'Run SSH-based deploy stage (disabled to use Ansible only)')
+
+        // Ansible-related
+        string(name: 'ANSIBLE_INVENTORY', defaultValue: 'infrastructure/ansible/inventory.ini', description: 'Path to Ansible inventory')
+        string(name: 'ANSIBLE_PLAYBOOK', defaultValue: 'infrastructure/ansible/site.yml', description: 'Path to Ansible playbook')
+        string(name: 'ANSIBLE_TAGS', defaultValue: 'app', description: 'Ansible tags to run')
+
+        // Optional SSH fallback
+        booleanParam(name: 'ENABLE_SSH_DEPLOY', defaultValue: false, description: 'Enable SSH-based deploy (fallback)')
     }
 
     triggers {
-        // Trigger via GitHub webhook on push
         githubPush()
     }
 
@@ -34,6 +35,7 @@ pipeline {
     }
 
     stages {
+
         stage('Checkout') {
             steps {
                 checkout scm
@@ -43,68 +45,78 @@ pipeline {
 
         stage('Verify Workspace') {
             steps {
-                sh 'echo "Backend dir:"; ls -la ${BACKEND_DIR} || true; echo "Frontend dir:"; ls -la ${FRONTEND_DIR} || true'
+                sh '''
+                    echo "Backend dir:"
+                    ls -la ${BACKEND_DIR} || true
+                    echo "Frontend dir:"
+                    ls -la ${FRONTEND_DIR} || true
+                '''
             }
         }
 
-        stage('Provision: Ansible (Optional)') {
+        stage('Provision: Ansible') {
             steps {
                 script {
-                    def inv = params.ANSIBLE_INVENTORY?.trim()
-                    def play = params.ANSIBLE_PLAYBOOK?.trim()
-                    def tags = params.ANSIBLE_TAGS?.trim()
-                    def tagsArg = tags ? "--tags \"${tags}\"" : ""
-                    // Require Ansible on Jenkins controller for Ansible-only deploy
-                    def hasAnsible = sh(script: 'command -v ansible-playbook >/dev/null 2>&1', returnStatus: true) == 0
+                    def inv  = params.ANSIBLE_INVENTORY.trim()
+                    def play = params.ANSIBLE_PLAYBOOK.trim()
+                    def tags = params.ANSIBLE_TAGS.trim()
+                    def tagsArg = tags ? "--tags ${tags}" : ""
+
+                    def hasAnsible = sh(
+                        script: 'command -v ansible-playbook >/dev/null 2>&1',
+                        returnStatus: true
+                    ) == 0
+
                     if (!hasAnsible) {
-                        error 'Ansible not installed on Jenkins controller. Install with: sudo apt-get update && sudo apt-get install -y ansible'
-                    } else {
-                        withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY')]) {
-                            sh """
-                                set -e
-                                echo "=== Provisioning via Ansible ==="
-                                export ANSIBLE_HOST_KEY_CHECKING=False
-                                # Use bound SSH key file via \$SSH_KEY (shell expansion)
-                                ansible-playbook -i ${inv} ${play} --private-key "\$SSH_KEY" -e ansible_ssh_private_key_file="\$SSH_KEY" ${tagsArg} -vv || echo "WARN: Ansible provisioning encountered issues"
-                            """
-                        }
+                        error 'Ansible is not installed on Jenkins controller'
+                    }
+
+                    withCredentials([
+                        sshUserPrivateKey(
+                            credentialsId: params.SSH_CREDENTIALS_ID,
+                            keyFileVariable: 'SSH_KEY'
+                        )
+                    ]) {
+                        sh """
+                            set -e
+                            echo "=== Deploying via Ansible ==="
+                            export ANSIBLE_HOST_KEY_CHECKING=False
+                            ansible-playbook -i ${inv} ${play} \
+                              -e ansible_ssh_private_key_file="\$SSH_KEY" \
+                              ${tagsArg} -vv
+                        """
                     }
                 }
             }
         }
 
-        stage('Deploy: Git Pull + Docker Compose (Remote)') {
+        stage('Deploy: SSH Fallback') {
+            when {
+                expression { return params.ENABLE_SSH_DEPLOY }
+            }
             steps {
                 script {
-                    if (!params.ENABLE_SSH_DEPLOY) {
-                        echo 'SSH deploy disabled (Ansible-only mode). Skipping.'
-                        return
-                    }
-                    def host = params.DROPLET_HOST?.trim()
-                    def user = params.SSH_USER?.trim()
-                    def remoteDir = params.REMOTE_DIR?.trim()
-                    def composeFile = params.COMPOSE_FILE?.trim()
-                    def branch = params.BRANCH?.trim()
-                    if (!host || !user) {
-                        error "Missing SSH parameters: DROPLET_HOST='${host}', SSH_USER='${user}'"
-                    }
-                    withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY')]) {
+                    withCredentials([
+                        sshUserPrivateKey(
+                            credentialsId: params.SSH_CREDENTIALS_ID,
+                            keyFileVariable: 'SSH_KEY'
+                        )
+                    ]) {
                         sh """
                             set -e
-                            echo "=== Deploying to ${host} as ${user} ==="
-                            ssh -i "\$SSH_KEY" -o StrictHostKeyChecking=no ${user}@${host} "bash -lc 'set -e; \
-                                # Ensure repo ownership matches SSH user to avoid Git dubious ownership
-                                sudo chown -R ${user}:${user} ${remoteDir} || true; \
-                                # Allow Git to operate in this directory
-                                git config --global --add safe.directory ${remoteDir}; \
-                                cd ${remoteDir}; \
-                                # Make sure remote is set (optional, harmless if already configured)
-                                git remote set-url origin https://github.com/Pathum-Vimukthi-Kumara/Personal-Library-Management-System-DevOps.git || true; \
-                                git fetch origin ${branch}; \
-                                git reset --hard origin/${branch}; \
-                                docker compose -f ${composeFile} down || true; \
-                                docker compose -f ${composeFile} up -d --build; \
-                                sudo systemctl restart nginx || true'"
+                            echo "=== SSH Deploy Fallback ==="
+                            ssh -i "\$SSH_KEY" -o StrictHostKeyChecking=no \
+                            ${params.SSH_USER}@${params.DROPLET_HOST} "bash -lc '
+                                set -e
+                                sudo chown -R ${params.SSH_USER}:${params.SSH_USER} ${params.REMOTE_DIR} || true
+                                git config --global --add safe.directory ${params.REMOTE_DIR}
+                                cd ${params.REMOTE_DIR}
+                                git fetch origin ${params.BRANCH}
+                                git reset --hard origin/${params.BRANCH}
+                                docker compose -f ${params.COMPOSE_FILE} down || true
+                                docker compose -f ${params.COMPOSE_FILE} up -d --build
+                                sudo systemctl restart nginx || true
+                            '"
                         """
                     }
                 }
@@ -114,17 +126,21 @@ pipeline {
         stage('Smoke Test') {
             steps {
                 sh '''
-                    echo "Testing HTTP on http://${DROPLET_HOST}"
+                    echo "Testing HTTP root"
                     curl -sSf -m 20 http://${DROPLET_HOST} -I || true
-                    echo "Checking frontend port 3008"
+
+                    echo "Testing frontend"
                     curl -sSf -m 20 http://${DROPLET_HOST}:3008 | head -c 200 || true
-                    echo "Waiting for backend health on 5001"
+
+                    echo "Waiting for backend health"
                     for i in $(seq 1 60); do
                       resp=$(curl -s -m 5 http://${DROPLET_HOST}:5001/actuator/health || true)
-                          echo "$resp" | grep -q '"status":"UP"' && { echo "Backend is UP"; break; }
+                      echo "$resp" | grep -q '"status":"UP"' && { echo "Backend is UP"; break; }
                       sleep 2
                     done
-                    echo "Backend health response:"; curl -s -m 10 http://${DROPLET_HOST}:5001/actuator/health || true
+
+                    echo "Final backend health response:"
+                    curl -s -m 10 http://${DROPLET_HOST}:5001/actuator/health || true
                 '''
             }
         }
