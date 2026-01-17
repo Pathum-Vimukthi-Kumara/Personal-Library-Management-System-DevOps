@@ -95,6 +95,27 @@ pipeline {
 
         /* ================= CD ================= */
 
+        stage('Ansible Preflight') {
+            steps {
+                withCredentials([
+                    sshUserPrivateKey(
+                        credentialsId: 'do-ssh-key',
+                        keyFileVariable: 'SSH_KEY'
+                    )
+                ]) {
+                    sh '''
+                        set -e
+                        export ANSIBLE_HOST_KEY_CHECKING=False
+                        ansible --version
+                        # Host connectivity check
+                        ansible -i infrastructure/ansible/inventory.ini app -m ping -e "ansible_ssh_private_key_file=$SSH_KEY"
+                        # Playbook syntax check
+                        ansible-playbook --syntax-check -i infrastructure/ansible/inventory.ini infrastructure/ansible/site.yml
+                    '''
+                }
+            }
+        }
+
         stage('Deploy with Ansible') {
             steps {
                 withCredentials([
@@ -119,6 +140,26 @@ EOF
                           -vv
 
                         rm -f "$EXTRA_VARS_PATH"
+                    '''
+                }
+            }
+        }
+
+        stage('Ansible Verify') {
+            steps {
+                withCredentials([
+                    sshUserPrivateKey(
+                        credentialsId: 'do-ssh-key',
+                        keyFileVariable: 'SSH_KEY'
+                    )
+                ]) {
+                    sh '''
+                        set -e
+                        export ANSIBLE_HOST_KEY_CHECKING=False
+                        # List running containers
+                        ansible -i infrastructure/ansible/inventory.ini app -m shell -e "ansible_ssh_private_key_file=$SSH_KEY" -a "docker ps"
+                        # Check health via curl from the server
+                        ansible -i infrastructure/ansible/inventory.ini app -m shell -e "ansible_ssh_private_key_file=$SSH_KEY" -a "curl -sf http://localhost:3008/api/actuator/health"
                     '''
                 }
             }
