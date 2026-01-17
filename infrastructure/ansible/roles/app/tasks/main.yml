@@ -49,6 +49,11 @@
   become_user: ansible
   tags: [app]
 
+- name: Compute JWT secret if undefined
+  set_fact:
+    computed_jwt_secret: "{{ jwt_secret | default(lookup('password', '/dev/null', chars='ascii_letters,digits', length=64)) }}"
+  tags: [app]
+
 - name: Set JWT values (from Ansible vars)
   lineinfile:
     path: /opt/personal-library/Backend/.env
@@ -56,7 +61,7 @@
     line: '{{ item.key }}={{ item.value }}'
     create: yes
   loop:
-    - { key: 'JWT_SECRET', value: '{{ jwt_secret }}' }
+    - { key: 'JWT_SECRET', value: '{{ computed_jwt_secret }}' }
     - { key: 'JWT_EXPIRATION', value: '86400000' }
   become: true
   become_user: ansible
