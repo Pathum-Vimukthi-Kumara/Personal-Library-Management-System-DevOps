@@ -13,7 +13,7 @@ pipeline {
     }
 
     environment {
-        DOCKERHUB_USER = 'YOUR_DOCKERHUB_USERNAME'
+        DOCKERHUB_USER = ''
         BACKEND_IMAGE  = 'personal-library-backend'
         FRONTEND_IMAGE = 'personal-library-frontend'
         SERVER_IP      = '45.55.107.160'
@@ -29,23 +29,48 @@ pipeline {
             }
         }
 
-        stage('Build Backend Image') {
+        stage('Docker Info') {
             steps {
                 sh '''
-                    docker build \
-                      -t $DOCKERHUB_USER/$BACKEND_IMAGE:latest \
-                      Backend
+                    echo "Checking Docker connectivity..."
+                    docker info || (echo "Docker is not accessible from Jenkins agent" && exit 1)
                 '''
+            }
+        }
+
+        stage('Build Backend Image') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-creds',
+                        usernameVariable: 'DH_USER',
+                        passwordVariable: 'DH_PASS'
+                    )
+                ]) {
+                    sh '''
+                        docker build \
+                          -t $DH_USER/$BACKEND_IMAGE:latest \
+                          Backend
+                    '''
+                }
             }
         }
 
         stage('Build Frontend Image') {
             steps {
-                sh '''
-                    docker build \
-                      -t $DOCKERHUB_USER/$FRONTEND_IMAGE:latest \
-                      frontend/frontend
-                '''
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-creds',
+                        usernameVariable: 'DH_USER',
+                        passwordVariable: 'DH_PASS'
+                    )
+                ]) {
+                    sh '''
+                        docker build \
+                          -t $DH_USER/$FRONTEND_IMAGE:latest \
+                          frontend/frontend
+                    '''
+                }
             }
         }
 
@@ -60,8 +85,8 @@ pipeline {
                 ]) {
                     sh '''
                         echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
-                        docker push $DOCKERHUB_USER/$BACKEND_IMAGE:latest
-                        docker push $DOCKERHUB_USER/$FRONTEND_IMAGE:latest
+                        docker push $DH_USER/$BACKEND_IMAGE:latest
+                        docker push $DH_USER/$FRONTEND_IMAGE:latest
                         docker logout
                     '''
                 }
