@@ -20,13 +20,19 @@ public class JwtUtil {
     private Long expiration;
 
     private Key getSigningKey() {
+        String normalized = secret != null ? secret.trim() : "";
         byte[] keyBytes;
-        // Try Base64 first (recommended for secrets)
-        try {
-            keyBytes = Decoders.BASE64.decode(secret);
-        } catch (IllegalArgumentException ex) {
-            // Fallback to raw bytes
-            keyBytes = secret.getBytes(StandardCharsets.UTF_8);
+        // Heuristic: decode Base64 only if it looks like Base64 (no commas/spaces and valid chars)
+        boolean looksBase64 = normalized.matches("^[A-Za-z0-9+/=]+$") && (normalized.length() % 4 == 0);
+        if (looksBase64) {
+            try {
+                keyBytes = Decoders.BASE64.decode(normalized);
+            } catch (IllegalArgumentException ex) {
+                // Fallback to raw bytes when decode fails
+                keyBytes = normalized.getBytes(StandardCharsets.UTF_8);
+            }
+        } else {
+            keyBytes = normalized.getBytes(StandardCharsets.UTF_8);
         }
 
         // Ensure at least 256 bits (32 bytes) per RFC 7518 for HS256
