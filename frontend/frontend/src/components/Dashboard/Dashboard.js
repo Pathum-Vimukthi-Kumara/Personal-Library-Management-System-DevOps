@@ -28,6 +28,8 @@ function Dashboard() {
     pagesTotal: 0,
     pagesRead: 0
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [imagePreview, setImagePreview] = useState('');
   
   const navigate = useNavigate();
 
@@ -113,7 +115,15 @@ function Dashboard() {
   const handleInputChange = (e) => {
     const { name, value, files } = e.target;
     if (name === 'image') {
-      setFormData(prev => ({ ...prev, image: files[0] }));
+      const file = files && files[0];
+      setFormData(prev => ({ ...prev, image: file || null }));
+      // Show a local preview for a more professional UX
+      if (file) {
+        const url = URL.createObjectURL(file);
+        setImagePreview(url);
+      } else {
+        setImagePreview('');
+      }
     } else {
       // Convert numeric fields to numbers
       if (name === 'pagesTotal' || name === 'pagesRead') {
@@ -127,6 +137,9 @@ function Dashboard() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
+
+    // Basic validation
     
     if (!formData.title || !formData.author) {
       setError('Title and author are required');
@@ -134,6 +147,7 @@ function Dashboard() {
     }
 
     try {
+      setIsSubmitting(true);
       const pagesTotal = Number(formData.pagesTotal || 0);
       const pagesRead = Number(formData.pagesRead || 0);
       if (pagesRead < 0 || pagesTotal < 0) {
@@ -152,10 +166,13 @@ function Dashboard() {
       }
       
       setFormData({ title: '', author: '', description: '', image: null, pagesTotal: 0, pagesRead: 0 });
+      setImagePreview('');
       setShowModal(false);
       fetchBooks();
     } catch (err) {
       setError(err.message || 'Failed to save book');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -186,6 +203,7 @@ function Dashboard() {
   const handleAddNew = () => {
     setFormData({ title: '', author: '', description: '', image: null, pagesTotal: 0, pagesRead: 0 });
     setEditingId(null);
+    setImagePreview('');
     setShowModal(true);
   };
 
@@ -404,97 +422,126 @@ function Dashboard() {
       {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
-            <h2 className="text-2xl font-bold mb-4">
-              {editingId ? 'Edit Book' : 'Add New Book'}
-            </h2>
-            
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-gray-700 font-medium mb-1">Title *</label>
-                <input 
-                  type="text"
-                  name="title"
-                  value={formData.title}
-                  onChange={handleInputChange}
-                  className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Book title"
-                />
-              </div>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl">
+            <div className="px-6 pt-6 pb-3 border-b">
+              <h2 className="text-2xl font-semibold text-slate-800">
+                {editingId ? 'Edit Book' : 'Add New Book'}
+              </h2>
+              <p className="text-sm text-slate-500 mt-1">Fill in the details and add a nice cover. Fields marked with * are required.</p>
+            </div>
 
-              <div>
-                <label className="block text-gray-700 font-medium mb-1">Author *</label>
-                <input 
-                  type="text"
-                  name="author"
-                  value={formData.author}
-                  onChange={handleInputChange}
-                  className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Author name"
-                />
-              </div>
+            <form onSubmit={handleSubmit} className="p-6">
+              {error && (
+                <div className="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                  {error}
+                </div>
+              )}
 
-              <div>
-                <label className="block text-gray-700 font-medium mb-1">Description</label>
-                <textarea 
-                  name="description"
-                  value={formData.description}
-                  onChange={handleInputChange}
-                  className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                  placeholder="Book description"
-                  rows="3"
-                />
-              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-slate-700 font-medium mb-1">Title <span className="text-red-500">*</span></label>
+                  <input 
+                    type="text"
+                    name="title"
+                    value={formData.title}
+                    onChange={handleInputChange}
+                    className={`w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 transition ${!formData.title && error ? 'border-red-300 focus:ring-red-300' : 'border-slate-300 focus:ring-indigo-200'}`}
+                    placeholder="Book title"
+                    aria-required="true"
+                  />
+                </div>
 
-              <div className="grid grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-slate-700 font-medium mb-1">Author <span className="text-red-500">*</span></label>
+                  <input 
+                    type="text"
+                    name="author"
+                    value={formData.author}
+                    onChange={handleInputChange}
+                    className={`w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 transition ${!formData.author && error ? 'border-red-300 focus:ring-red-300' : 'border-slate-300 focus:ring-indigo-200'}`}
+                    placeholder="Author name"
+                    aria-required="true"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-slate-700 font-medium mb-1">Description</label>
+                  <textarea 
+                    name="description"
+                    value={formData.description}
+                    onChange={handleInputChange}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200 resize-none"
+                    placeholder="A short note about the book"
+                    rows="3"
+                  />
+                </div>
+
                 <div>
-                  <label className="block text-gray-700 font-medium mb-1">Total Pages</label>
+                  <label className="block text-slate-700 font-medium mb-1">Total Pages</label>
                   <input
                     type="number"
                     name="pagesTotal"
                     min="0"
                     value={formData.pagesTotal}
                     onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200"
                     placeholder="e.g., 300"
+                    inputMode="numeric"
                   />
                 </div>
                 <div>
-                  <label className="block text-gray-700 font-medium mb-1">Pages Read</label>
+                  <label className="block text-slate-700 font-medium mb-1">Pages Read</label>
                   <input
                     type="number"
                     name="pagesRead"
                     min="0"
                     value={formData.pagesRead}
                     onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200"
                     placeholder="e.g., 120"
+                    inputMode="numeric"
                   />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-slate-700 font-medium mb-1">Book Cover Image</label>
+                  <div className="flex items-start gap-4">
+                    <label className="flex-1 cursor-pointer rounded-lg border border-dashed border-slate-300 p-4 hover:border-indigo-300 transition">
+                      <div className="flex items-center justify-center h-28 text-slate-500">
+                        <div className="text-center">
+                          <div className="font-medium">Click to upload</div>
+                          <div className="text-xs">PNG, JPG up to 2MB</div>
+                        </div>
+                      </div>
+                      <input 
+                        type="file"
+                        name="image"
+                        onChange={handleInputChange}
+                        accept="image/*"
+                        className="sr-only"
+                      />
+                    </label>
+                    {imagePreview && (
+                      <div className="w-24 h-24 rounded-md overflow-hidden border border-slate-200 shadow-sm">
+                        <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-gray-700 font-medium mb-1">Book Cover Image</label>
-                <input 
-                  type="file"
-                  name="image"
-                  onChange={handleInputChange}
-                  accept="image/*"
-                  className="w-full border border-gray-300 rounded px-3 py-2"
-                />
-              </div>
-
-              <div className="flex gap-3 pt-4">
+              <div className="flex gap-3 pt-6">
                 <button 
                   type="submit"
-                  className="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium py-2 rounded transition"
+                  disabled={isSubmitting}
+                  className={`flex-1 inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 rounded-lg transition disabled:opacity-60 disabled:cursor-not-allowed`}
                 >
-                  {editingId ? 'Update' : 'Add'} Book
+                  {isSubmitting ? 'Saving…' : (editingId ? 'Update' : 'Add')} Book
                 </button>
                 <button 
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-2 rounded transition"
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 rounded-lg transition"
                 >
                   Cancel
                 </button>
