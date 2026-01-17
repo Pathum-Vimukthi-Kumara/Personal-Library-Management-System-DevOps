@@ -196,18 +196,20 @@ function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-white text-gray-800">
-      <div className="flex max-w-7xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-blue-50 text-gray-800">
+      <div className="flex max-w-7xl mx-auto px-4">
         <Sidebar currentView={currentView} onSelect={setCurrentView} onAddItem={handleAddNew} />
 
         <div className="flex-1 min-w-0">
           {/* Top bar */}
-          <div className="sticky top-0 z-10 bg-white border-b">
-            <div className="px-4 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="sticky top-0 z-10 border-b bg-white/70 backdrop-blur">
+            <div className="py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-semibold">{currentView === 'dashboard' ? 'Dashboard' : 'My Books'}</h1>
+                <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
+                  {currentView === 'dashboard' ? 'Dashboard' : 'My Books'}
+                </h1>
                 {currentView !== 'dashboard' && (
-                  <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-md">{filteredBooks.length}</span>
+                  <span className="text-xs md:text-sm bg-indigo-100 text-indigo-700 px-2 py-1 rounded-md">{filteredBooks.length}</span>
                 )}
               </div>
               <div className="flex items-center gap-3 w-full md:w-auto">
@@ -216,20 +218,20 @@ function Dashboard() {
                     type="text"
                     value={search}
                     onChange={e => setSearch(e.target.value)}
-                    className="w-full border rounded-md pl-10 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-gray-300 rounded-md pl-10 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
                     placeholder="Start Searching..."
                   />
                   <span className="absolute left-3 top-2.5 text-gray-400">🔎</span>
                 </div>
                 <button 
                   onClick={handleAddNew}
-                  className="hidden md:inline-flex bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-md"
+                  className="hidden md:inline-flex bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 py-2 rounded-md shadow-sm"
                 >
                   + Add Book
                 </button>
                 <button 
                   onClick={handleLogout}
-                  className="hidden md:inline-flex bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-4 py-2 rounded-md"
+                  className="hidden md:inline-flex bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 font-medium px-4 py-2 rounded-md shadow-sm"
                 >
                   Logout
                 </button>
@@ -240,13 +242,13 @@ function Dashboard() {
             <div className="px-4 pb-3">
               {currentView !== 'dashboard' && (
               <div className="flex items-center gap-3">
-                <div className="flex flex-wrap gap-1 text-sm">
+                <div className="flex flex-wrap gap-1.5 text-sm">
                   {letters.map(l => (
                     <button
                       key={l}
                       type="button"
                       onClick={() => setActiveLetter(prev => prev === l ? '' : l)}
-                      className={`px-2 py-1 rounded ${activeLetter === l ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-100'}`}
+                      className={`px-2.5 py-1 rounded-md border ${activeLetter === l ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}
                     >
                       {l}
                     </button>
@@ -255,13 +257,13 @@ function Dashboard() {
                 <div className="ml-auto flex items-center gap-2">
                   <div className="hidden md:flex items-center gap-2 text-sm">
                     <span className="text-gray-600">Sort</span>
-                    <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="border rounded px-2 py-1">
+                    <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="border border-gray-300 rounded px-2 py-1 bg-white shadow-sm">
                       <option value="title">Title</option>
                       <option value="author">Author</option>
                       <option value="created">Recently added</option>
                     </select>
                   </div>
-                  <button onClick={() => setShowFilters(s => !s)} className="text-sm border rounded px-3 py-1 bg-white hover:bg-gray-50">
+                  <button onClick={() => setShowFilters(s => !s)} className="text-sm border border-gray-300 rounded px-3 py-1 bg-white hover:bg-gray-50 shadow-sm">
                     Filters
                   </button>
                 </div>
@@ -269,7 +271,7 @@ function Dashboard() {
               )}
 
               {showFilters && currentView !== 'dashboard' && (
-                <div className="mt-3 border rounded-md p-3 bg-gray-50">
+                <div className="mt-3 border border-gray-200 rounded-md p-3 bg-white shadow-sm">
                   <div className="grid md:grid-cols-3 gap-3">
                     <div>
                       <label className="text-xs text-gray-600">Author</label>
@@ -277,7 +279,7 @@ function Dashboard() {
                         type="text"
                         value={authorFilter}
                         onChange={e => setAuthorFilter(e.target.value)}
-                        className="w-full border rounded px-2 py-1"
+                        className="w-full border border-gray-300 rounded px-2 py-1 shadow-sm"
                         placeholder="Filter by author"
                       />
                     </div>
@@ -327,11 +329,12 @@ function Dashboard() {
             <p className="text-gray-600 text-lg">Loading your books...</p>
           </div>
         ) : books.length === 0 ? (
-          <div className="bg-white rounded-lg shadow-md p-12 text-center">
-            <p className="text-gray-600 text-lg mb-4">No books in your library yet</p>
+          <div className="bg-white/80 rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+            <div className="text-4xl mb-2">📚</div>
+            <p className="text-gray-700 text-lg mb-4">No books in your library yet</p>
             <button 
               onClick={handleAddNew}
-              className="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-6 rounded-lg"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-6 rounded-lg shadow-sm"
             >
               Add Your First Book
             </button>
@@ -342,7 +345,7 @@ function Dashboard() {
             {filteredBooks.map((book) => (
               <div 
                 key={book.id} 
-                className="bg-white rounded-lg border overflow-hidden hover:shadow-sm transition"
+                className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition"
               >
                 {book.imagePath && (
                   <img 
@@ -379,7 +382,7 @@ function Dashboard() {
                   <div className="flex gap-2">
                     <button 
                       onClick={() => handleEdit(book)}
-                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 rounded transition text-sm"
+                      className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-3 rounded transition text-sm"
                     >
                       Edit
                     </button>
