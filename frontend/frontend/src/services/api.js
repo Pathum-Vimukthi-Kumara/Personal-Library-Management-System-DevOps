@@ -3,8 +3,23 @@
 // 1) build-time env (REACT_APP_API_URL)
 // 2) runtime global (window.REACT_APP_API_URL injected by server, if any)
 // 3) relative path (empty) which relies on reverse-proxy (/api -> backend)
-export const API_BASE_URL =
-  (process.env.REACT_APP_API_URL || (typeof window !== 'undefined' ? window.REACT_APP_API_URL : '') || '').replace(/\/$/, '');
+// Determine API base URL with safety against stale absolute hosts
+let resolvedBase = (process.env.REACT_APP_API_URL || (typeof window !== 'undefined' ? window.REACT_APP_API_URL : '') || '').replace(/\/$/, '');
+try {
+  if (typeof window !== 'undefined' && resolvedBase) {
+    const url = new URL(resolvedBase, window.location.origin);
+    // If a baked/bundled absolute URL points to a different host than current,
+    // prefer relative path to avoid stale IPs after infra changes.
+    if (url.host && url.host !== window.location.host) {
+      resolvedBase = '';
+    }
+  }
+} catch (e) {
+  // If URL parsing fails, fall back to relative
+  resolvedBase = '';
+}
+
+export const API_BASE_URL = resolvedBase;
 
 export const getAuthToken = () => {
   return localStorage.getItem('authToken');

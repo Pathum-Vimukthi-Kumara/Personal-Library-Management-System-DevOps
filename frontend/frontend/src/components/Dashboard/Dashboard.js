@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getBooks, addBook, updateBook, deleteBook, removeAuthToken } from '../../services/api';
+import { API_BASE_URL } from '../../services/api';
 import Sidebar from '../Sidebar/Sidebar';
 
 function Dashboard() {
@@ -345,7 +346,7 @@ function Dashboard() {
               >
                 {book.imagePath && (
                   <img 
-                    src={`${(process.env.REACT_APP_API_URL || window.REACT_APP_API_URL || '').replace(/\/$/, '') || ''}/api/images/${(book.imagePath || '').split('/').pop()}`} 
+                    src={`${(API_BASE_URL || '')}/api/images/${(book.imagePath || '').split('/').pop()}`} 
                     alt={book.title}
                     className="w-full h-40 object-cover"
                   />
