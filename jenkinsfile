@@ -7,153 +7,109 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '20'))
     }
 
-    parameters {
-        string(name: 'DROPLET_HOST', defaultValue: '45.55.107.160', description: 'DigitalOcean droplet IP / Reserved IP')
-        string(name: 'SSH_USER', defaultValue: 'ansible', description: 'SSH user on droplet')
-        string(name: 'SSH_CREDENTIALS_ID', defaultValue: 'do-ssh-key', description: 'Jenkins SSH key credential ID')
-        string(name: 'REMOTE_DIR', defaultValue: '/opt/personal-library', description: 'App directory on droplet')
-        string(name: 'COMPOSE_FILE', defaultValue: 'compose.yaml', description: 'Docker compose file')
-        string(name: 'BRANCH', defaultValue: 'master', description: 'Git branch to deploy')
-
-        // Ansible
-        string(name: 'ANSIBLE_INVENTORY', defaultValue: 'infrastructure/ansible/inventory.ini')
-        string(name: 'ANSIBLE_PLAYBOOK', defaultValue: 'infrastructure/ansible/site.yml')
-        string(name: 'ANSIBLE_TAGS', defaultValue: 'app')
-
-        // Optional SSH fallback
-        booleanParam(name: 'ENABLE_SSH_DEPLOY', defaultValue: false, description: 'Enable SSH fallback deploy')
-    }
-
+    /* ===== GITHUB WEBHOOK TRIGGER ===== */
     triggers {
         githubPush()
     }
 
     environment {
-        BACKEND_DIR  = 'Backend'
-        FRONTEND_DIR = 'frontend/frontend'
+        DOCKERHUB_USER = 'YOUR_DOCKERHUB_USERNAME'
+        BACKEND_IMAGE  = 'personal-library-backend'
+        FRONTEND_IMAGE = 'personal-library-frontend'
+        SERVER_IP      = '45.55.107.160'
     }
 
     stages {
 
-        /* ================= CHECKOUT ================= */
+        /* ================= CI ================= */
 
         stage('Checkout') {
             steps {
                 checkout scm
-                sh 'echo "✓ Code checked out"'
             }
         }
 
-        stage('Verify Workspace') {
+        stage('Build Backend Image') {
             steps {
                 sh '''
-                    echo "Backend:"
-                    ls -la ${BACKEND_DIR} || true
-                    echo "Frontend:"
-                    ls -la ${FRONTEND_DIR} || true
+                    docker build \
+                      -t $DOCKERHUB_USER/$BACKEND_IMAGE:latest \
+                      Backend
                 '''
             }
         }
 
-        /* ================= ANSIBLE DEPLOY (PRIMARY) ================= */
-
-        stage('Deploy: Ansible (Primary)') {
+        stage('Build Frontend Image') {
             steps {
-                script {
-                    def hasAnsible = sh(
-                        script: 'command -v ansible-playbook >/dev/null 2>&1',
-                        returnStatus: true
-                    ) == 0
+                sh '''
+                    docker build \
+                      -t $DOCKERHUB_USER/$FRONTEND_IMAGE:latest \
+                      frontend/frontend
+                '''
+            }
+        }
 
-                    if (!hasAnsible) {
-                        error 'Ansible is not installed on Jenkins'
-                    }
-
-                    withCredentials([
-                        sshUserPrivateKey(
-                            credentialsId: params.SSH_CREDENTIALS_ID,
-                            keyFileVariable: 'SSH_KEY'
-                        )
-                    ]) {
-                        sh """
-                            set -e
-                            echo "=== Deploying via Ansible (FORCED REBUILD) ==="
-                            export ANSIBLE_HOST_KEY_CHECKING=False
-                            ansible-playbook \
-                              -i ${params.ANSIBLE_INVENTORY} \
-                              ${params.ANSIBLE_PLAYBOOK} \
-                              --tags ${params.ANSIBLE_TAGS} \
-                              -e ansible_ssh_private_key_file="\$SSH_KEY" \
-                              -vv
-                        """
-                    }
+        stage('Push Images to Docker Hub') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-creds',
+                        usernameVariable: 'DH_USER',
+                        passwordVariable: 'DH_PASS'
+                    )
+                ]) {
+                    sh '''
+                        echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
+                        docker push $DOCKERHUB_USER/$BACKEND_IMAGE:latest
+                        docker push $DOCKERHUB_USER/$FRONTEND_IMAGE:latest
+                        docker logout
+                    '''
                 }
             }
         }
 
-        /* ================= SSH FALLBACK (OPTIONAL) ================= */
+        /* ================= CD ================= */
 
-        stage('Deploy: SSH Fallback') {
-            when {
-                expression { return params.ENABLE_SSH_DEPLOY }
-            }
+        stage('Deploy with Ansible') {
             steps {
                 withCredentials([
                     sshUserPrivateKey(
-                        credentialsId: params.SSH_CREDENTIALS_ID,
+                        credentialsId: 'do-ssh-key',
                         keyFileVariable: 'SSH_KEY'
                     )
                 ]) {
-                    sh """
-                        set -e
-                        echo "=== SSH Fallback Deploy (FORCED REBUILD) ==="
-                        ssh -i "\$SSH_KEY" -o StrictHostKeyChecking=no \
-                        ${params.SSH_USER}@${params.DROPLET_HOST} <<'EOF'
-                            set -e
-                            cd ${params.REMOTE_DIR}
-                            sudo chown -R ${params.SSH_USER}:${params.SSH_USER} .
-                            git config --global --add safe.directory ${params.REMOTE_DIR}
-                            git fetch origin ${params.BRANCH}
-                            git reset --hard origin/${params.BRANCH}
+                    sh '''
+                        export ANSIBLE_HOST_KEY_CHECKING=False
 
-                            docker compose -f ${params.COMPOSE_FILE} down || true
-                            docker compose -f ${params.COMPOSE_FILE} build --no-cache --pull
-                            docker compose -f ${params.COMPOSE_FILE} up -d
-
-                            sudo systemctl restart nginx || true
-EOF
-                    """
+                        ansible-playbook \
+                          -i infrastructure/ansible/inventory.ini \
+                          infrastructure/ansible/site.yml \
+                          -e ansible_ssh_private_key_file="$SSH_KEY" \
+                          -vv
+                    '''
                 }
             }
         }
-
-        /* ================= SMOKE TEST ================= */
 
         stage('Smoke Test') {
             steps {
                 sh '''
-                    echo "HTTP root:"
-                    curl -sSf -m 20 http://${DROPLET_HOST} -I || true
-
-                    echo "Frontend:"
-                    curl -sSf -m 20 http://${DROPLET_HOST}:3008 | head -c 200 || true
-
-                    echo "Waiting for backend health via frontend proxy"
-                    for i in $(seq 1 60); do
-                      resp=$(curl -s -m 5 http://${DROPLET_HOST}:3008/api/actuator/health || true)
-                      echo "$resp" | grep -q '"status":"UP"' && break
-                      sleep 2
-                    done
-
-                    curl -s -m 10 http://${DROPLET_HOST}:3008/api/actuator/health || true
+                    curl -f http://$SERVER_IP:3008 || true
+                    curl -f http://$SERVER_IP:3008/api/actuator/health || true
                 '''
             }
         }
     }
 
     post {
-        success { echo 'PIPELINE SUCCESSFUL!' }
-        failure { echo 'PIPELINE FAILED!' }
-        always  { echo '=== Pipeline finished ===' }
+        success {
+            echo '✅ CI/CD PIPELINE SUCCESSFUL'
+        }
+        failure {
+            echo '❌ CI/CD PIPELINE FAILED'
+        }
+        always {
+            echo '=== Pipeline finished ==='
+        }
     }
 }
