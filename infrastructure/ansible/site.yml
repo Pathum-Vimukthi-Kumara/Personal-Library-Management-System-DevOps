@@ -1,17 +1,25 @@
 ---
-- hosts: app
+- name: Setup system and runtime
+  hosts: app
   become: true
   roles:
-    - setup
-    - docker
-    - app
-    - nginx
+    - role: setup
+      tags: [setup]
 
-- hosts: app
+    - role: docker
+      tags: [docker]
+
+- name: Deploy application
+  hosts: app
   become: true
-  vars:
-    ansible_user: ansible
-  tasks:
-    - name: Switch to ansible user for remaining tasks
-      set_fact:
-        ansible_user: ansible
+  become_user: ansible
+  roles:
+    - role: app
+      tags: [app]
+
+- name: Configure nginx
+  hosts: app
+  become: true
+  roles:
+    - role: nginx
+      tags: [nginx]
