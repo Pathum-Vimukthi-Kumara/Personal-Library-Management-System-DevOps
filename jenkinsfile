@@ -51,6 +51,8 @@ pipeline {
                         docker build \
                           -t $DH_USER/$BACKEND_IMAGE:latest \
                           Backend
+                        # Add commit tag for deterministic deployments
+                        docker tag $DH_USER/$BACKEND_IMAGE:latest $DH_USER/$BACKEND_IMAGE:$GIT_COMMIT
                     '''
                 }
             }
@@ -69,6 +71,7 @@ pipeline {
                         docker build \
                           -t $DH_USER/$FRONTEND_IMAGE:latest \
                           frontend/frontend
+                        docker tag $DH_USER/$FRONTEND_IMAGE:latest $DH_USER/$FRONTEND_IMAGE:$GIT_COMMIT
                     '''
                 }
             }
@@ -86,7 +89,9 @@ pipeline {
                     sh '''
                         echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
                         docker push $DH_USER/$BACKEND_IMAGE:latest
+                        docker push $DH_USER/$BACKEND_IMAGE:$GIT_COMMIT
                         docker push $DH_USER/$FRONTEND_IMAGE:latest
+                        docker push $DH_USER/$FRONTEND_IMAGE:$GIT_COMMIT
                         docker logout
                     '''
                 }
@@ -130,7 +135,7 @@ pipeline {
                         PUB_KEY="$(ssh-keygen -y -f "$SSH_KEY")"
                         EXTRA_VARS_PATH="$(mktemp)"
                         cat > "$EXTRA_VARS_PATH" <<EOF
-{"ansible_ssh_private_key_file":"$SSH_KEY","ansible_public_key":"$PUB_KEY"}
+{"ansible_ssh_private_key_file":"$SSH_KEY","ansible_public_key":"$PUB_KEY","deploy_tag":"$GIT_COMMIT"}
 EOF
 
                         ansible-playbook \

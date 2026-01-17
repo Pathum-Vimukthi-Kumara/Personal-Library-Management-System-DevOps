@@ -64,6 +64,8 @@
   command: docker compose -f compose.yaml pull
   args:
     chdir: /opt/personal-library
+  environment:
+    DEPLOY_TAG: "{{ deploy_tag | default('latest') }}"
   become: true
   become_user: ansible
   tags: [app]
@@ -73,6 +75,8 @@
   args:
     chdir: /opt/personal-library
   ignore_errors: true
+  environment:
+    DEPLOY_TAG: "{{ deploy_tag | default('latest') }}"
   become: true
   become_user: ansible
   tags: [app]
@@ -81,6 +85,8 @@
   command: docker compose -f compose.yaml up -d
   args:
     chdir: /opt/personal-library
+  environment:
+    DEPLOY_TAG: "{{ deploy_tag | default('latest') }}"
   become: true
   become_user: ansible
   tags: [app]
