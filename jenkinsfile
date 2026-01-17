@@ -9,7 +9,7 @@ pipeline {
     }
 
     parameters {
-        string(name: 'DROPLET_HOST', defaultValue: '143.198.162.25', description: 'DigitalOcean droplet IP or hostname')
+        string(name: 'DROPLET_HOST', defaultValue: '45.55.107.160', description: 'DigitalOcean droplet IP or hostname (Reserved IP)')
         string(name: 'SSH_USER', defaultValue: 'ansible', description: 'SSH user on droplet')
         string(name: 'SSH_CREDENTIALS_ID', defaultValue: 'do-ssh-key', description: 'Jenkins SSH credential ID (Private Key)')
         string(name: 'REMOTE_DIR', defaultValue: '/opt/personal-library', description: 'Remote directory with compose files')
@@ -121,10 +121,16 @@ pipeline {
                                                                 done
                                 git fetch origin ${params.BRANCH}
                                 git reset --hard origin/${params.BRANCH}
-                                                                docker compose -f ${params.COMPOSE_FILE} down --remove-orphans || true
+                                docker compose -f ${params.COMPOSE_FILE} down --remove-orphans || true
                                     # Rebuild images pulling latest base layers
-                                    docker compose -f ${params.COMPOSE_FILE} build --pull
+                                    nice -n 10 docker compose -f ${params.COMPOSE_FILE} build --pull
                                     docker compose -f ${params.COMPOSE_FILE} up -d
+
+                                # Cap runtime CPU for frontend/backend so Jenkins stays responsive
+                                b_id=$(docker compose -f ${params.COMPOSE_FILE} ps -q backend || true)
+                                f_id=$(docker compose -f ${params.COMPOSE_FILE} ps -q frontend || true)
+                                if [ -n "\$b_id" ]; then docker update --cpus 0.75 "\$b_id" || true; fi
+                                if [ -n "\$f_id" ]; then docker update --cpus 0.75 "\$f_id" || true; fi
                                 sudo systemctl restart nginx || true
                             '"
                         """

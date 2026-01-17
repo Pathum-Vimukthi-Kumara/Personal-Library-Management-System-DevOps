@@ -13,3 +13,9 @@ variable "region" {
   description = "DigitalOcean region"
   default     = "nyc1"
 }
+
+variable "droplet_size" {
+  description = "DigitalOcean droplet size slug (e.g., s-2vcpu-4gb, s-4vcpu-8gb)"
+  type        = string
+  default     = "s-2vcpu-4gb"
+}

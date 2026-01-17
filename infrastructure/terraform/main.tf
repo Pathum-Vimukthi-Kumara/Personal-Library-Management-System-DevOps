@@ -15,7 +15,7 @@ resource "digitalocean_droplet" "web" {
   image  = "ubuntu-22-04-x64"
   name   = "devops-project"
   region = var.region
-  size   = "s-1vcpu-2gb"
+  size   = var.droplet_size
   
   ssh_keys = [digitalocean_ssh_key.default.fingerprint]
   
@@ -33,6 +33,16 @@ resource "digitalocean_droplet" "web" {
   EOF
 }
 
+# Keep a stable public IP even when resizing/recreating the droplet
+resource "digitalocean_reserved_ip" "main" {
+  region = var.region
+}
+
+resource "digitalocean_reserved_ip_assignment" "main" {
+  ip_address = digitalocean_reserved_ip.main.ip_address
+  droplet_id = digitalocean_droplet.web.id
+}
+
 resource "digitalocean_ssh_key" "default" {
   name       = "devops-key"
   public_key = file(pathexpand(var.ssh_key_path))
@@ -40,4 +50,9 @@ resource "digitalocean_ssh_key" "default" {
 
 output "droplet_ip" {
   value = digitalocean_droplet.web.ipv4_address
+}
+
+output "public_ip" {
+  description = "Reserved public IP attached to the droplet"
+  value       = digitalocean_reserved_ip.main.ip_address
 }
