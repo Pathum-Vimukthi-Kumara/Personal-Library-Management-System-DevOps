@@ -105,11 +105,13 @@ pipeline {
                 ]) {
                     sh '''
                         export ANSIBLE_HOST_KEY_CHECKING=False
+                        PUB_KEY="$(ssh-keygen -y -f "$SSH_KEY")"
 
                         ansible-playbook \
                           -i infrastructure/ansible/inventory.ini \
                           infrastructure/ansible/site.yml \
                           -e ansible_ssh_private_key_file="$SSH_KEY" \
+                          -e "ansible_public_key=$PUB_KEY" \
                           -vv
                     '''
                 }

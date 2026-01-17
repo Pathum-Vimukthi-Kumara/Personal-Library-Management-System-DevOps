@@ -10,7 +10,9 @@
 - name: Set up SSH key for ansible user
   authorized_key:
     user: ansible
-    key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+    key: "{{ ansible_public_key }}"
+    manage_dir: yes
+  when: ansible_public_key is defined
 
 - name: Allow ansible user sudo without password
   lineinfile:
