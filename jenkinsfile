@@ -114,7 +114,7 @@ pipeline {
                                                                 # Proactively free common ports from any old stacks
                                                                 echo "Cleaning up any containers bound to ports 5001 or 3008..."
                                                                 for p in 5001 3008; do
-                                                                    ids=$(docker ps --format '{{.ID}} {{.Ports}}' | awk -v port=\$p 'match(\$0, port"->") {print $1}')
+                                                                    ids=$(docker ps --format '{{.ID}} {{.Ports}}' | awk -v port=\$p 'match(\$0, port"->") {print \$1}')
                                                                     if [ -n "\$ids" ]; then
                                                                         echo "Stopping containers on port \$p: \$ids"; docker stop \$ids || true; docker rm \$ids || true;
                                                                     fi
