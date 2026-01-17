@@ -81,6 +81,10 @@ export const getBooks = async () => {
     console.log('Response status:', response.status);
     
     if (!response.ok) {
+      if (response.status === 401) {
+        // Token invalid or missing; clear and bubble up a consistent error
+        try { removeAuthToken(); } catch {}
+      }
       let body = null;
       try { body = await response.text(); } catch (e) { /* ignore */ }
       throw new Error(`Failed to fetch books (status ${response.status})${body ? ': ' + body : ''}`);
@@ -122,7 +126,12 @@ export const addBook = async (title, author, description, image, pagesTotal, pag
     body: formData
   });
   if (!response.ok) {
-    throw new Error('Failed to add book');
+    if (response.status === 401) {
+      try { removeAuthToken(); } catch {}
+    }
+    let body = null;
+    try { body = await response.text(); } catch (e) { /* ignore */ }
+    throw new Error(`Failed to add book (status ${response.status})${body ? ': ' + body : ''}`);
   }
   return response.json();
 };
@@ -151,7 +160,12 @@ export const updateBook = async (id, title, author, description, image, pagesTot
     body: formData
   });
   if (!response.ok) {
-    throw new Error('Failed to update book');
+    if (response.status === 401) {
+      try { removeAuthToken(); } catch {}
+    }
+    let body = null;
+    try { body = await response.text(); } catch (e) { /* ignore */ }
+    throw new Error(`Failed to update book (status ${response.status})${body ? ': ' + body : ''}`);
   }
   return response.json();
 };
@@ -163,6 +177,9 @@ export const deleteBook = async (id) => {
     headers
   });
   if (!response.ok) {
+    if (response.status === 401) {
+      try { removeAuthToken(); } catch {}
+    }
     let body = null;
     try { body = await response.text(); } catch (e) { /* ignore */ }
     throw new Error(`Failed to delete book (status ${response.status})${body ? ': ' + body : ''}`);

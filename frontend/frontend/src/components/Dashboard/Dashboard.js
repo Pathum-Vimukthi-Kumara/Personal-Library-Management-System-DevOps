@@ -54,8 +54,14 @@ function Dashboard() {
       setBooks(Array.isArray(data) ? data : []);
       setError('');
     } catch (err) {
-      setError('Failed to fetch books. Please try again.');
+      const msg = String(err?.message || 'Failed to fetch books. Please try again.');
+      setError(msg);
       console.error('Error fetching books:', err);
+      // If unauthorized, clear auth and redirect to login
+      if (msg.includes('status 401')) {
+        try { removeAuthToken(); } catch {}
+        navigate('/login');
+      }
     } finally {
       setLoading(false);
     }
@@ -170,7 +176,12 @@ function Dashboard() {
       setShowModal(false);
       fetchBooks();
     } catch (err) {
-      setError(err.message || 'Failed to save book');
+      const msg = err.message || 'Failed to save book';
+      setError(msg);
+      if (msg.includes('status 401')) {
+        try { removeAuthToken(); } catch {}
+        navigate('/login');
+      }
     } finally {
       setIsSubmitting(false);
     }
