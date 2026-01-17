@@ -22,8 +22,7 @@ services:
 
   backend:
     image: pathum2002/personal-library-backend:latest
-    ports:
-      - "5001:4000"
+    # No host port published; frontend proxies to backend:4000 internally
     restart: unless-stopped
     env_file:
       - Backend/.env

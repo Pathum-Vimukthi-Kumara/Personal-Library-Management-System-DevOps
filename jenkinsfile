@@ -111,9 +111,17 @@ pipeline {
                                 sudo chown -R ${params.SSH_USER}:${params.SSH_USER} ${params.REMOTE_DIR} || true
                                 git config --global --add safe.directory ${params.REMOTE_DIR}
                                 cd ${params.REMOTE_DIR}
+                                                                # Proactively free common ports from any old stacks
+                                                                echo "Cleaning up any containers bound to ports 5001 or 3008..."
+                                                                for p in 5001 3008; do
+                                                                    ids=$(docker ps --format '{{.ID}} {{.Ports}}' | awk -v port=$p 'match($0, port"->") {print $1}')
+                                                                    if [ -n "\$ids" ]; then
+                                                                        echo "Stopping containers on port \$p: \$ids"; docker stop \$ids || true; docker rm \$ids || true;
+                                                                    fi
+                                                                done
                                 git fetch origin ${params.BRANCH}
                                 git reset --hard origin/${params.BRANCH}
-                                docker compose -f ${params.COMPOSE_FILE} down || true
+                                                                docker compose -f ${params.COMPOSE_FILE} down --remove-orphans || true
                                     # Rebuild images pulling latest base layers
                                     docker compose -f ${params.COMPOSE_FILE} build --pull
                                     docker compose -f ${params.COMPOSE_FILE} up -d
@@ -131,18 +139,18 @@ pipeline {
                     echo "Testing HTTP root"
                     curl -sSf -m 20 http://${DROPLET_HOST} -I || true
 
-                    echo "Testing frontend"
-                    curl -sSf -m 20 http://${DROPLET_HOST}:3008 | head -c 200 || true
+                                        echo "Testing frontend"
+                                        curl -sSf -m 20 http://${DROPLET_HOST}:3008 | head -c 200 || true
 
-                    echo "Waiting for backend health"
-                    for i in $(seq 1 60); do
-                      resp=$(curl -s -m 5 http://${DROPLET_HOST}:5001/actuator/health || true)
-                      echo "$resp" | grep -q '"status":"UP"' && { echo "Backend is UP"; break; }
-                      sleep 2
-                    done
+                                        echo "Waiting for backend health via frontend proxy (/api)"
+                                        for i in $(seq 1 60); do
+                                            resp=$(curl -s -m 5 http://${DROPLET_HOST}:3008/api/actuator/health || true)
+                                            echo "$resp" | grep -q '"status":"UP"' && { echo "Backend is UP"; break; }
+                                            sleep 2
+                                        done
 
-                    echo "Final backend health response:"
-                    curl -s -m 10 http://${DROPLET_HOST}:5001/actuator/health || true
+                                        echo "Final backend health response via /api:"
+                                        curl -s -m 10 http://${DROPLET_HOST}:3008/api/actuator/health || true
                 '''
             }
         }
