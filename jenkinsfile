@@ -77,7 +77,7 @@ pipeline {
                     ]) {
                         sh """
                             set -e
-                            echo "=== Deploying via Ansible ==="
+                            echo "=== Deploying via Ansible (FORCED REBUILD) ==="
                             export ANSIBLE_HOST_KEY_CHECKING=False
                             ansible-playbook \
                               -i ${params.ANSIBLE_INVENTORY} \
@@ -106,7 +106,7 @@ pipeline {
                 ]) {
                     sh """
                         set -e
-                        echo "=== SSH Fallback Deploy ==="
+                        echo "=== SSH Fallback Deploy (FORCED REBUILD) ==="
                         ssh -i "\$SSH_KEY" -o StrictHostKeyChecking=no \
                         ${params.SSH_USER}@${params.DROPLET_HOST} <<'EOF'
                             set -e
@@ -115,9 +115,11 @@ pipeline {
                             git config --global --add safe.directory ${params.REMOTE_DIR}
                             git fetch origin ${params.BRANCH}
                             git reset --hard origin/${params.BRANCH}
+
                             docker compose -f ${params.COMPOSE_FILE} down || true
-                            docker compose -f ${params.COMPOSE_FILE} build --pull
+                            docker compose -f ${params.COMPOSE_FILE} build --no-cache --pull
                             docker compose -f ${params.COMPOSE_FILE} up -d
+
                             sudo systemctl restart nginx || true
 EOF
                     """
