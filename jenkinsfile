@@ -41,14 +41,46 @@ pipeline {
                 checkout scm
                 sh 'echo "✓ Code checked out"'
             }
-        }
-
-        stage('Verify Workspace') {
-            steps {
-                sh '''
-                    echo "Backend dir:"
-                    ls -la ${BACKEND_DIR} || true
-                    echo "Frontend dir:"
+                                                withEnv([
+                                                        "DEPLOY_SSH_USER=${params.SSH_USER}",
+                                                        "DROPLET_HOST=${params.DROPLET_HOST}",
+                                                        "REMOTE_DIR=${params.REMOTE_DIR}",
+                                                        "COMPOSE_FILE=${params.COMPOSE_FILE}",
+                                                        "DEPLOY_BRANCH=${params.BRANCH}"
+                                                ]) {
+                                                        sh '''
+                                                                set -e
+                                                                echo "=== SSH Deploy Fallback ==="
+                                                                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no \
+                                                                    "$DEPLOY_SSH_USER@$DROPLET_HOST" 'bash -s' -- "$DEPLOY_SSH_USER" "$REMOTE_DIR" "$COMPOSE_FILE" "$DEPLOY_BRANCH" <<'EOF'
+                                                                set -e
+                                                                DEPLOY_SSH_USER="$1"
+                                                                REMOTE_DIR="$2"
+                                                                COMPOSE_FILE="$3"
+                                                                DEPLOY_BRANCH="$4"
+                                                                sudo chown -R "$DEPLOY_SSH_USER:$DEPLOY_SSH_USER" "$REMOTE_DIR" || true
+                                                                git config --global --add safe.directory "$REMOTE_DIR"
+                                                                cd "$REMOTE_DIR"
+                                                                echo "Cleaning up any containers bound to ports 5001 or 3008..."
+                                                                for p in 5001 3008; do
+                                                                    ids=$(docker ps --format "{{.ID}} {{.Ports}}" | awk -v port=$p "match(\$0, port\"->\") {print \$1}")
+                                                                    if [ -n "$ids" ]; then
+                                                                        echo "Stopping containers on port $p: $ids"; docker stop $ids || true; docker rm $ids || true;
+                                                                    fi
+                                                                done
+                                                                git fetch origin "$DEPLOY_BRANCH"
+                                                                git reset --hard "origin/$DEPLOY_BRANCH"
+                                                                docker compose -f "$COMPOSE_FILE" down --remove-orphans || true
+                                                                nice -n 10 docker compose -f "$COMPOSE_FILE" build --pull
+                                                                docker compose -f "$COMPOSE_FILE" up -d
+                                                                b_id=$(docker compose -f "$COMPOSE_FILE" ps -q backend || true)
+                                                                f_id=$(docker compose -f "$COMPOSE_FILE" ps -q frontend || true)
+                                                                if [ -n "$b_id" ]; then docker update --cpus 0.75 "$b_id" || true; fi
+                                                                if [ -n "$f_id" ]; then docker update --cpus 0.75 "$f_id" || true; fi
+                                                                sudo systemctl restart nginx || true
+EOF
+                                                        '''
+                                                }
                     ls -la ${FRONTEND_DIR} || true
                 '''
             }
