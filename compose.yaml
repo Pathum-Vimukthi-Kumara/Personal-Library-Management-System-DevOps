@@ -29,6 +29,12 @@ services:
     volumes:
       - backend_data:/app/data
       - ./uploads:/app/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
     depends_on:
       mysql:
         condition: service_healthy
@@ -43,7 +49,8 @@ services:
     volumes:
       - frontend_data:/usr/share/nginx/html/data
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   db_store:
