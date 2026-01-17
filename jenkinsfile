@@ -5,24 +5,23 @@ pipeline {
         timestamps()
         disableConcurrentBuilds()
         buildDiscarder(logRotator(numToKeepStr: '20'))
-        parallelsAlwaysFailFast()
     }
 
     parameters {
-        string(name: 'DROPLET_HOST', defaultValue: '45.55.107.160', description: 'DigitalOcean droplet IP or hostname (Reserved IP)')
+        string(name: 'DROPLET_HOST', defaultValue: '45.55.107.160', description: 'DigitalOcean droplet IP / Reserved IP')
         string(name: 'SSH_USER', defaultValue: 'ansible', description: 'SSH user on droplet')
-        string(name: 'SSH_CREDENTIALS_ID', defaultValue: 'do-ssh-key', description: 'Jenkins SSH credential ID (Private Key)')
-        string(name: 'REMOTE_DIR', defaultValue: '/opt/personal-library', description: 'Remote directory with compose files')
-        string(name: 'COMPOSE_FILE', defaultValue: 'compose.yaml', description: 'Compose file to use')
+        string(name: 'SSH_CREDENTIALS_ID', defaultValue: 'do-ssh-key', description: 'Jenkins SSH key credential ID')
+        string(name: 'REMOTE_DIR', defaultValue: '/opt/personal-library', description: 'App directory on droplet')
+        string(name: 'COMPOSE_FILE', defaultValue: 'compose.yaml', description: 'Docker compose file')
         string(name: 'BRANCH', defaultValue: 'master', description: 'Git branch to deploy')
 
-        // Ansible-related
-        string(name: 'ANSIBLE_INVENTORY', defaultValue: 'infrastructure/ansible/inventory.ini', description: 'Path to Ansible inventory')
-        string(name: 'ANSIBLE_PLAYBOOK', defaultValue: 'infrastructure/ansible/site.yml', description: 'Path to Ansible playbook')
-        string(name: 'ANSIBLE_TAGS', defaultValue: 'app', description: 'Ansible tags to run')
+        // Ansible
+        string(name: 'ANSIBLE_INVENTORY', defaultValue: 'infrastructure/ansible/inventory.ini')
+        string(name: 'ANSIBLE_PLAYBOOK', defaultValue: 'infrastructure/ansible/site.yml')
+        string(name: 'ANSIBLE_TAGS', defaultValue: 'app')
 
         // Optional SSH fallback
-        booleanParam(name: 'ENABLE_SSH_DEPLOY', defaultValue: true, description: 'Enable SSH-based deploy (fallback)')
+        booleanParam(name: 'ENABLE_SSH_DEPLOY', defaultValue: false, description: 'Enable SSH fallback deploy')
     }
 
     triggers {
@@ -36,71 +35,38 @@ pipeline {
 
     stages {
 
+        /* ================= CHECKOUT ================= */
+
         stage('Checkout') {
             steps {
                 checkout scm
                 sh 'echo "✓ Code checked out"'
             }
-                                                withEnv([
-                                                        "DEPLOY_SSH_USER=${params.SSH_USER}",
-                                                        "DROPLET_HOST=${params.DROPLET_HOST}",
-                                                        "REMOTE_DIR=${params.REMOTE_DIR}",
-                                                        "COMPOSE_FILE=${params.COMPOSE_FILE}",
-                                                        "DEPLOY_BRANCH=${params.BRANCH}"
-                                                ]) {
-                                                        sh '''
-                                                                set -e
-                                                                echo "=== SSH Deploy Fallback ==="
-                                                                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no \
-                                                                    "$DEPLOY_SSH_USER@$DROPLET_HOST" 'bash -s' -- "$DEPLOY_SSH_USER" "$REMOTE_DIR" "$COMPOSE_FILE" "$DEPLOY_BRANCH" <<'EOF'
-                                                                set -e
-                                                                DEPLOY_SSH_USER="$1"
-                                                                REMOTE_DIR="$2"
-                                                                COMPOSE_FILE="$3"
-                                                                DEPLOY_BRANCH="$4"
-                                                                sudo chown -R "$DEPLOY_SSH_USER:$DEPLOY_SSH_USER" "$REMOTE_DIR" || true
-                                                                git config --global --add safe.directory "$REMOTE_DIR"
-                                                                cd "$REMOTE_DIR"
-                                                                echo "Cleaning up any containers bound to ports 5001 or 3008..."
-                                                                for p in 5001 3008; do
-                                                                    ids=$(docker ps --format "{{.ID}} {{.Ports}}" | awk -v port=$p "match(\$0, port\"->\") {print \$1}")
-                                                                    if [ -n "$ids" ]; then
-                                                                        echo "Stopping containers on port $p: $ids"; docker stop $ids || true; docker rm $ids || true;
-                                                                    fi
-                                                                done
-                                                                git fetch origin "$DEPLOY_BRANCH"
-                                                                git reset --hard "origin/$DEPLOY_BRANCH"
-                                                                docker compose -f "$COMPOSE_FILE" down --remove-orphans || true
-                                                                nice -n 10 docker compose -f "$COMPOSE_FILE" build --pull
-                                                                docker compose -f "$COMPOSE_FILE" up -d
-                                                                b_id=$(docker compose -f "$COMPOSE_FILE" ps -q backend || true)
-                                                                f_id=$(docker compose -f "$COMPOSE_FILE" ps -q frontend || true)
-                                                                if [ -n "$b_id" ]; then docker update --cpus 0.75 "$b_id" || true; fi
-                                                                if [ -n "$f_id" ]; then docker update --cpus 0.75 "$f_id" || true; fi
-                                                                sudo systemctl restart nginx || true
-EOF
-                                                        '''
-                                                }
+        }
+
+        stage('Verify Workspace') {
+            steps {
+                sh '''
+                    echo "Backend:"
+                    ls -la ${BACKEND_DIR} || true
+                    echo "Frontend:"
                     ls -la ${FRONTEND_DIR} || true
                 '''
             }
         }
 
-        stage('Provision: Ansible') {
+        /* ================= ANSIBLE DEPLOY (PRIMARY) ================= */
+
+        stage('Deploy: Ansible (Primary)') {
             steps {
                 script {
-                    def inv  = params.ANSIBLE_INVENTORY.trim()
-                    def play = params.ANSIBLE_PLAYBOOK.trim()
-                    def tags = params.ANSIBLE_TAGS.trim()
-                    def tagsArg = tags ? "--tags ${tags}" : ""
-
                     def hasAnsible = sh(
                         script: 'command -v ansible-playbook >/dev/null 2>&1',
                         returnStatus: true
                     ) == 0
 
                     if (!hasAnsible) {
-                        error 'Ansible is not installed on Jenkins controller'
+                        error 'Ansible is not installed on Jenkins'
                     }
 
                     withCredentials([
@@ -113,82 +79,71 @@ EOF
                             set -e
                             echo "=== Deploying via Ansible ==="
                             export ANSIBLE_HOST_KEY_CHECKING=False
-                            ansible-playbook -i ${inv} ${play} \
+                            ansible-playbook \
+                              -i ${params.ANSIBLE_INVENTORY} \
+                              ${params.ANSIBLE_PLAYBOOK} \
+                              --tags ${params.ANSIBLE_TAGS} \
                               -e ansible_ssh_private_key_file="\$SSH_KEY" \
-                              ${tagsArg} -vv
+                              -vv
                         """
                     }
                 }
             }
         }
 
+        /* ================= SSH FALLBACK (OPTIONAL) ================= */
+
         stage('Deploy: SSH Fallback') {
             when {
                 expression { return params.ENABLE_SSH_DEPLOY }
             }
             steps {
-                script {
-                    withCredentials([
-                        sshUserPrivateKey(
-                            credentialsId: params.SSH_CREDENTIALS_ID,
-                            keyFileVariable: 'SSH_KEY'
-                        )
-                    ]) {
-                                                sh """
-                                                        set -e
-                                                        echo "=== SSH Deploy Fallback ==="
-                                                        ssh -i \"\$SSH_KEY\" -o StrictHostKeyChecking=no \
-                                                            ${params.SSH_USER}@${params.DROPLET_HOST} 'bash -s' -- ${params.SSH_USER} ${params.REMOTE_DIR} ${params.COMPOSE_FILE} ${params.BRANCH} <<'EOF'
-                                                        set -e
-                                                        DEPLOY_SSH_USER=\"\$1\"
-                                                        REMOTE_DIR=\"\$2\"
-                                                        COMPOSE_FILE=\"\$3\"
-                                                        DEPLOY_BRANCH=\"\$4\"
-                                                        sudo chown -R \"\$DEPLOY_SSH_USER:\$DEPLOY_SSH_USER\" \"\$REMOTE_DIR\" || true
-                                                        git config --global --add safe.directory \"\$REMOTE_DIR\"
-                                                        cd \"\$REMOTE_DIR\"
-                                                        echo \"Cleaning up any containers bound to ports 5001 or 3008...\"
-                                                        for p in 5001 3008; do
-                                                            ids=$(docker ps --format \"{{.ID}} {{.Ports}}\" | awk -v port=\$p \"match(\$0, port\\\"->\\\") {print \$1}\")
-                                                            if [ -n \"\$ids\" ]; then
-                                                                echo \"Stopping containers on port \$p: \$ids\"; docker stop \$ids || true; docker rm \$ids || true;
-                                                            fi
-                                                        done
-                                                        git fetch origin \"\$DEPLOY_BRANCH\"
-                                                        git reset --hard \"origin/\$DEPLOY_BRANCH\"
-                                                        docker compose -f \"\$COMPOSE_FILE\" down --remove-orphans || true
-                                                        nice -n 10 docker compose -f \"\$COMPOSE_FILE\" build --pull
-                                                        docker compose -f \"\$COMPOSE_FILE\" up -d
-                                                        b_id=$(docker compose -f \"\$COMPOSE_FILE\" ps -q backend || true)
-                                                        f_id=$(docker compose -f \"\$COMPOSE_FILE\" ps -q frontend || true)
-                                                        if [ -n \"\$b_id\" ]; then docker update --cpus 0.75 \"\$b_id\" || true; fi
-                                                        if [ -n \"\$f_id\" ]; then docker update --cpus 0.75 \"\$f_id\" || true; fi
-                                                        sudo systemctl restart nginx || true
+                withCredentials([
+                    sshUserPrivateKey(
+                        credentialsId: params.SSH_CREDENTIALS_ID,
+                        keyFileVariable: 'SSH_KEY'
+                    )
+                ]) {
+                    sh """
+                        set -e
+                        echo "=== SSH Fallback Deploy ==="
+                        ssh -i "\$SSH_KEY" -o StrictHostKeyChecking=no \
+                        ${params.SSH_USER}@${params.DROPLET_HOST} <<'EOF'
+                            set -e
+                            cd ${params.REMOTE_DIR}
+                            sudo chown -R ${params.SSH_USER}:${params.SSH_USER} .
+                            git config --global --add safe.directory ${params.REMOTE_DIR}
+                            git fetch origin ${params.BRANCH}
+                            git reset --hard origin/${params.BRANCH}
+                            docker compose -f ${params.COMPOSE_FILE} down || true
+                            docker compose -f ${params.COMPOSE_FILE} build --pull
+                            docker compose -f ${params.COMPOSE_FILE} up -d
+                            sudo systemctl restart nginx || true
 EOF
-                                                """
-                    }
+                    """
                 }
             }
         }
 
+        /* ================= SMOKE TEST ================= */
+
         stage('Smoke Test') {
             steps {
                 sh '''
-                    echo "Testing HTTP root"
+                    echo "HTTP root:"
                     curl -sSf -m 20 http://${DROPLET_HOST} -I || true
 
-                                        echo "Testing frontend"
-                                        curl -sSf -m 20 http://${DROPLET_HOST}:3008 | head -c 200 || true
+                    echo "Frontend:"
+                    curl -sSf -m 20 http://${DROPLET_HOST}:3008 | head -c 200 || true
 
-                                        echo "Waiting for backend health via frontend proxy (/api)"
-                                        for i in $(seq 1 60); do
-                                            resp=$(curl -s -m 5 http://${DROPLET_HOST}:3008/api/actuator/health || true)
-                                            echo "$resp" | grep -q '"status":"UP"' && { echo "Backend is UP"; break; }
-                                            sleep 2
-                                        done
+                    echo "Waiting for backend health via frontend proxy"
+                    for i in $(seq 1 60); do
+                      resp=$(curl -s -m 5 http://${DROPLET_HOST}:3008/api/actuator/health || true)
+                      echo "$resp" | grep -q '"status":"UP"' && break
+                      sleep 2
+                    done
 
-                                        echo "Final backend health response via /api:"
-                                        curl -s -m 10 http://${DROPLET_HOST}:3008/api/actuator/health || true
+                    curl -s -m 10 http://${DROPLET_HOST}:3008/api/actuator/health || true
                 '''
             }
         }
