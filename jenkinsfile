@@ -102,38 +102,46 @@ pipeline {
                             keyFileVariable: 'SSH_KEY'
                         )
                     ]) {
-                        sh """
-                            set -e
-                            echo "=== SSH Deploy Fallback ==="
-                            ssh -i "\$SSH_KEY" -o StrictHostKeyChecking=no \
-                            ${params.SSH_USER}@${params.DROPLET_HOST} "bash -lc '
+                        withEnv([
+                            "DEPLOY_SSH_USER=${params.SSH_USER}",
+                            "DROPLET_HOST=${params.DROPLET_HOST}",
+                            "REMOTE_DIR=${params.REMOTE_DIR}",
+                            "COMPOSE_FILE=${params.COMPOSE_FILE}",
+                            "DEPLOY_BRANCH=${params.BRANCH}"
+                        ]) {
+                            sh '''
                                 set -e
-                                sudo chown -R ${params.SSH_USER}:${params.SSH_USER} ${params.REMOTE_DIR} || true
-                                git config --global --add safe.directory ${params.REMOTE_DIR}
-                                cd ${params.REMOTE_DIR}
-                                                                # Proactively free common ports from any old stacks
-                                                                echo "Cleaning up any containers bound to ports 5001 or 3008..."
-                                                                for p in 5001 3008; do
-                                                                    ids=$(docker ps --format '{{.ID}} {{.Ports}}' | awk -v port=\$p 'match(\$0, port"->") {print \$1}')
-                                                                    if [ -n "\$ids" ]; then
-                                                                        echo "Stopping containers on port \$p: \$ids"; docker stop \$ids || true; docker rm \$ids || true;
-                                                                    fi
-                                                                done
-                                git fetch origin ${params.BRANCH}
-                                git reset --hard origin/${params.BRANCH}
-                                docker compose -f ${params.COMPOSE_FILE} down --remove-orphans || true
+                                echo "=== SSH Deploy Fallback ==="
+                                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no \
+                                  "$DEPLOY_SSH_USER@$DROPLET_HOST" bash -lc '
+                                    set -e
+                                    sudo chown -R "$DEPLOY_SSH_USER:$DEPLOY_SSH_USER" "$REMOTE_DIR" || true
+                                    git config --global --add safe.directory "$REMOTE_DIR"
+                                    cd "$REMOTE_DIR"
+                                    # Proactively free common ports from any old stacks
+                                    echo "Cleaning up any containers bound to ports 5001 or 3008..."
+                                    for p in 5001 3008; do
+                                      ids=$(docker ps --format "{{.ID}} {{.Ports}}" | awk -v port=$p "match($0, port\"->\") {print $1}")
+                                      if [ -n "$ids" ]; then
+                                        echo "Stopping containers on port $p: $ids"; docker stop $ids || true; docker rm $ids || true;
+                                      fi
+                                    done
+                                    git fetch origin "$DEPLOY_BRANCH"
+                                    git reset --hard "origin/$DEPLOY_BRANCH"
+                                    docker compose -f "$COMPOSE_FILE" down --remove-orphans || true
                                     # Rebuild images pulling latest base layers
-                                    nice -n 10 docker compose -f ${params.COMPOSE_FILE} build --pull
-                                    docker compose -f ${params.COMPOSE_FILE} up -d
+                                    nice -n 10 docker compose -f "$COMPOSE_FILE" build --pull
+                                    docker compose -f "$COMPOSE_FILE" up -d
 
-                                # Cap runtime CPU for frontend/backend so Jenkins stays responsive
-                                b_id=$(docker compose -f ${params.COMPOSE_FILE} ps -q backend || true)
-                                f_id=$(docker compose -f ${params.COMPOSE_FILE} ps -q frontend || true)
-                                if [ -n "\$b_id" ]; then docker update --cpus 0.75 "\$b_id" || true; fi
-                                if [ -n "\$f_id" ]; then docker update --cpus 0.75 "\$f_id" || true; fi
-                                sudo systemctl restart nginx || true
-                            '"
-                        """
+                                    # Cap runtime CPU for frontend/backend so Jenkins stays responsive
+                                    b_id=$(docker compose -f "$COMPOSE_FILE" ps -q backend || true)
+                                    f_id=$(docker compose -f "$COMPOSE_FILE" ps -q frontend || true)
+                                    if [ -n "$b_id" ]; then docker update --cpus 0.75 "$b_id" || true; fi
+                                    if [ -n "$f_id" ]; then docker update --cpus 0.75 "$f_id" || true; fi
+                                    sudo systemctl restart nginx || true
+                                  '
+                            '''
+                        }
                     }
                 }
             }
