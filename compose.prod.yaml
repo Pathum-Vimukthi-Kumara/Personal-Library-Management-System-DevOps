@@ -21,7 +21,9 @@ services:
       start_period: 30s
 
   backend:
-    image: pathum2002/personal-library-backend:latest
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
     # No host port published; frontend proxies to backend:4000 internally
     restart: unless-stopped
     env_file:
@@ -35,7 +37,7 @@ services:
       - backend_data:/app/data
       - ./uploads:/app/uploads
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/actuator/health | grep -q '\"status\":\"UP\"'"]
+      test: ["CMD-SHELL", "curl -s http://localhost:4000/actuator/health | grep -q '\"status\":\"UP\"'"]
       interval: 10s
       timeout: 5s
       retries: 20
