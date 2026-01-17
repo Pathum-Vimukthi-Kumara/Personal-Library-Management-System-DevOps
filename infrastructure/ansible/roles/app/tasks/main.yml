@@ -4,6 +4,8 @@
     name: git
     state: present
     update_cache: yes
+  become: true
+  become_user: root
   tags: [app]
 
 - name: Ensure app directory exists
@@ -13,6 +15,8 @@
     owner: ansible
     group: ansible
     mode: '0755'
+  become: true
+  become_user: root
   tags: [app]
 
 - name: Clone or update repository
@@ -21,6 +25,8 @@
     dest: /opt/personal-library
     version: master
     force: yes
+  become: true
+  become_user: ansible
   tags: [app]
 
 - name: Stop running containers
@@ -28,6 +34,8 @@
   args:
     chdir: /opt/personal-library
   ignore_errors: true
+  become: true
+  become_user: ansible
   tags: [app]
 
 - name: Ensure backend env exists
@@ -37,6 +45,8 @@
     fi
   args:
     chdir: /opt/personal-library
+  become: true
+  become_user: ansible
   tags: [app]
 
 - name: Set JWT values (from Ansible vars)
@@ -48,22 +58,30 @@
   loop:
     - { key: 'JWT_SECRET', value: '{{ jwt_secret }}' }
     - { key: 'JWT_EXPIRATION', value: '86400000' }
+  become: true
+  become_user: ansible
   tags: [app]
 
 - name: Build docker images (FORCE rebuild)
   shell: docker compose -f compose.yaml build --no-cache --pull
   args:
     chdir: /opt/personal-library
+  become: true
+  become_user: ansible
   tags: [app]
 
 - name: Start containers
   shell: docker compose -f compose.yaml up -d
   args:
     chdir: /opt/personal-library
+  become: true
+  become_user: ansible
   tags: [app]
 
 - name: Restart nginx
   service:
     name: nginx
     state: restarted
+  become: true
+  become_user: root
   tags: [app]
