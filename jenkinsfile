@@ -104,14 +104,21 @@ pipeline {
                     )
                 ]) {
                     sh '''
+                        set -e
                         export ANSIBLE_HOST_KEY_CHECKING=False
-                                                PUB_KEY="$(ssh-keygen -y -f \"$SSH_KEY\")"
+                        PUB_KEY="$(ssh-keygen -y -f "$SSH_KEY")"
+                        EXTRA_VARS_PATH="$(mktemp)"
+                        cat > "$EXTRA_VARS_PATH" <<EOF
+{"ansible_ssh_private_key_file":"$SSH_KEY","ansible_public_key":"$PUB_KEY"}
+EOF
 
-                                                ansible-playbook \
-                                                    -i infrastructure/ansible/inventory.ini \
-                                                    infrastructure/ansible/site.yml \
-                                                    --extra-vars "$(printf '{"ansible_ssh_private_key_file":"%s","ansible_public_key":"%s"}' \"$SSH_KEY\" \"$PUB_KEY\")" \
-                                                    -vv
+                        ansible-playbook \
+                          -i infrastructure/ansible/inventory.ini \
+                          infrastructure/ansible/site.yml \
+                          --extra-vars "@${EXTRA_VARS_PATH}" \
+                          -vv
+
+                        rm -f "$EXTRA_VARS_PATH"
                     '''
                 }
             }

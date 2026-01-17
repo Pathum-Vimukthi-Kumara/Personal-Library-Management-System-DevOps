@@ -29,14 +29,6 @@
   become_user: ansible
   tags: [app]
 
-- name: Stop running containers
-  shell: docker compose -f compose.yaml down
-  args:
-    chdir: /opt/personal-library
-  ignore_errors: true
-  become: true
-  become_user: ansible
-  tags: [app]
 
 - name: Ensure backend env exists
   shell: |
@@ -67,7 +59,7 @@
   become_user: ansible
   tags: [app]
 
-\n+# Pull and deploy images from Docker Hub (built by Jenkins)
+# Pull and deploy images from Docker Hub (built by Jenkins)
 - name: Pull latest Docker images from Docker Hub
   command: docker compose -f compose.yaml pull
   args:
@@ -100,13 +92,7 @@
   become_user: root
   tags: [app]
 
-- name: Start containers
-  shell: docker compose -f compose.yaml up -d
-  args:
-    chdir: /opt/personal-library
-  become: true
-  become_user: ansible
-  tags: [app]
+ 
 
 - name: Restart nginx
   service:
