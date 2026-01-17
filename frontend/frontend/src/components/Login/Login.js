@@ -45,7 +45,7 @@ function Login() {
           <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-indigo-600 text-white shadow-sm">📚</span>
           <h2 className="text-3xl font-bold text-gray-900">Library</h2>
         </div>
-        <p className="text-center text-gray-600 mb-6">Welcome back  manage your personal collection</p>
+        <p className="text-center text-gray-600 mb-6">Welcome back - manage your personal collection</p>
 
         {error && (
           <div className="mb-4 bg-red-100 text-red-700 p-3 rounded text-sm" role="alert">
