@@ -45,7 +45,11 @@ services:
         condition: service_healthy
 
   frontend:
-    image: pathum2002/personal-library-frontend:latest
+    build:
+      context: ./frontend/frontend
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_API_URL: ""
     ports:
       - "3008:80"
     restart: unless-stopped
