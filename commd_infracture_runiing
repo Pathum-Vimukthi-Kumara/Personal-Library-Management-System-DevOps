@@ -1,6 +1,0 @@
-terraform runig
-cd "/mnt/c/Users/hp/Desktop/5th sem academic/DevOps_Project/infrastructure/terraform"; ls -la; terraform init; terraform plan -var-file="terraform.tfvars"; terraform apply -auto-approve -var-file="terraform.tfvars"; echo DROPLET_IP=$(terraform output -raw droplet_ip)
-
-ansible 
-cd "/mnt/c/Users/hp/Desktop/5th sem academic/DevOps_Project/infrastructure/ansible"; ansible -i inventory.ini app -m ping
-cd "/mnt/c/Users/hp/Desktop/5th sem academic/DevOps_Project/infrastructure/ansible"; ansible-playbook -i inventory.ini site.yml
