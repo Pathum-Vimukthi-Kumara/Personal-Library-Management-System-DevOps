@@ -9,3 +9,6 @@ wsl bash -lc 'cd /mnt/h/5th\ sem\ academic/DevOps_Project/infrastructure/terrafo
 
 ansible run
 bash -lc 'cd "/mnt/h/5th sem academic/DevOps_Project/infrastructure/ansible"; ansible-playbook -i inventory.ini site.yml -vv'
+
+ssh
+ssh -i ~/.ssh/do_id_ed25519 ansible@45.55.107.160
