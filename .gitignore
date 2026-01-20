@@ -7,8 +7,8 @@ node_modules/
 
 # Backend env files (keep .env.example tracked)
 
-
-
+.idea/
+.vscode/
 # Terraform local secrets (do not commit)
 infrastructure/terraform/secret.auto.tfvars
 # Frontend env files (keep .env.example tracked)
