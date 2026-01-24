@@ -1,143 +1,139 @@
 ---
-- name: Install git
-  apt:
-    name: git
-    state: present
-    update_cache: yes
-  become: yes
-  tags: [app]
-
-- name: Ensure app directory exists
+- name: Remove corrupted docker repo file
   file:
-    path: /opt/personal-library
+    path: /etc/apt/sources.list.d/docker.list
+    state: absent
+  become: yes
+
+- name: Force cleanup of apt
+  shell: |
+    set -e
+    # Kill any apt processes
+    killall apt apt-get dpkg 2>/dev/null || true
+    
+    # Remove all lock files
+    rm -f /var/lib/apt/lists/lock
+    rm -f /var/cache/apt/archives/lock
+    rm -f /var/lib/dpkg/lock*
+    
+    # Clean apt
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+    
+    # Recreate directory
+    mkdir -p /var/lib/apt/lists/partial
+    
+    # Configure dpkg
+    dpkg --configure -a
+  become: yes
+  ignore_errors: yes
+
+- name: Wait a moment for filesystem to settle
+  pause:
+    seconds: 5
+
+- name: Try apt update with fix-missing
+  shell: apt-get update --fix-missing
+  become: yes
+  register: apt_fix
+  ignore_errors: yes
+
+- name: Update apt cache (final attempt)
+  apt:
+    update_cache: yes
+    force_apt_get: yes
+  become: yes
+  retries: 3
+  delay: 10
+  register: apt_result
+  until: apt_result is succeeded
+
+- name: Install Docker prerequisites
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+    state: present
+    force_apt_get: yes
+  become: yes
+
+- name: Create keyrings directory
+  file:
+    path: /etc/apt/keyrings
     state: directory
-    owner: ansible
-    group: ansible
     mode: '0755'
   become: yes
-  tags: [app]
 
-- name: Clone or update repository
-  git:
-    repo: "https://github.com/Pathum-Vimukthi-Kumara/Personal-Library-Management-System-DevOps.git"
-    dest: /opt/personal-library
-    version: master
-    force: yes
-  become: yes
-  become_user: ansible
-  tags: [app]
-
-- name: Ensure backend env exists
+- name: Download and install Docker GPG key
   shell: |
-    if [ ! -f Backend/.env ] && [ -f Backend/.env.example ]; then
-      cp Backend/.env.example Backend/.env
-    fi
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    chmod a+r /etc/apt/keyrings/docker.gpg
   args:
-    chdir: /opt/personal-library
+    creates: /etc/apt/keyrings/docker.gpg
   become: yes
-  become_user: ansible
-  tags: [app]
 
-- name: Compute JWT secret if undefined
-  set_fact:
-    computed_jwt_secret: "{{ jwt_secret | default(lookup('password', '/dev/null chars=ascii_letters,digits length=64')) }}"
-  tags: [app]
+- name: Get Ubuntu codename
+  shell: lsb_release -cs
+  register: ubuntu_codename
+  changed_when: false
 
-- name: Set JWT values (from Ansible vars)
-  lineinfile:
-    path: /opt/personal-library/Backend/.env
-    regexp: '^{{ item.key }}='
-    line: '{{ item.key }}={{ item.value }}'
-    create: yes
-  loop:
-    - { key: 'JWT_SECRET', value: '{{ computed_jwt_secret }}' }
-    - { key: 'JWT_EXPIRATION', value: '86400000' }
-  become: yes
-  become_user: ansible
-  tags: [app]
+- name: Get system architecture
+  shell: dpkg --print-architecture
+  register: system_arch
+  changed_when: false
 
-- name: Create .env file for docker compose
+- name: Add Docker repository
   copy:
     content: |
-      DEPLOY_TAG={{ deploy_tag | default('latest') }}
-    dest: /opt/personal-library/.env
-    owner: ansible
-    group: ansible
+      deb [arch={{ system_arch.stdout }} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu {{ ubuntu_codename.stdout }} stable
+    dest: /etc/apt/sources.list.d/docker.list
     mode: '0644'
   become: yes
-  tags: [app]
 
-- name: Pull latest Docker images from Docker Hub
-  community.docker.docker_compose_v2:
-    project_src: /opt/personal-library
-    files:
-      - compose.yaml
+- name: Update apt after adding Docker repo
+  apt:
+    update_cache: yes
+    force_apt_get: yes
+  become: yes
+  retries: 3
+  delay: 5
+
+- name: Install Docker Engine
+  apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
     state: present
-    pull: always
-  environment:
-    DEPLOY_TAG: "{{ deploy_tag | default('latest') }}"
+    force_apt_get: yes
   become: yes
-  become_user: ansible
-  tags: [app]
-  register: pull_result
 
-- name: Stop running containers
-  community.docker.docker_compose_v2:
-    project_src: /opt/personal-library
-    files:
-      - compose.yaml
-    state: absent
-  environment:
-    DEPLOY_TAG: "{{ deploy_tag | default('latest') }}"
+- name: Start and enable Docker service
+  systemd:
+    name: docker
+    state: started
+    enabled: yes
+    daemon_reload: yes
   become: yes
-  become_user: ansible
-  ignore_errors: yes
-  tags: [app]
 
-- name: Start containers using pulled images
-  community.docker.docker_compose_v2:
-    project_src: /opt/personal-library
-    files:
-      - compose.yaml
-    state: present
-  environment:
-    DEPLOY_TAG: "{{ deploy_tag | default('latest') }}"
+- name: Add ansible user to docker group
+  user:
+    name: ansible
+    groups: docker
+    append: yes
   become: yes
-  become_user: ansible
-  tags: [app]
-  register: compose_up
+  notify: reset ssh connection
 
-- name: Wait for backend to be healthy
-  uri:
-    url: http://localhost:8080/actuator/health
-    status_code: 200
-  retries: 30
-  delay: 10
-  become: yes
-  tags: [app]
-  ignore_errors: yes
+- name: Verify Docker installation
+  command: docker --version
+  register: docker_version
+  changed_when: false
 
-- name: Wait for frontend to be healthy
-  uri:
-    url: http://localhost:3000
-    status_code: 200
-  retries: 30
-  delay: 10
-  become: yes
-  tags: [app]
-  ignore_errors: yes
-
-- name: Remove unused Docker images
-  docker_prune:
-    images: yes
-    images_filters:
-      dangling: true
-  become: yes
-  tags: [app]
-
-- name: Restart nginx
-  service:
-    name: nginx
-    state: restarted
-  become: yes
-  tags: [app]
+- name: Display Docker version
+  debug:
+    msg: "Docker installed: {{ docker_version.stdout }}"
