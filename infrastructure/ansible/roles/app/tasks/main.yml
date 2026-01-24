@@ -1,127 +1,79 @@
 ---
-- name: Remove old Docker repository file
-  file:
-    path: /etc/apt/sources.list.d/docker.list
-    state: absent
-  become: yes
-
-- name: Kill any apt/dpkg processes
-  shell: |
-    killall -9 apt apt-get dpkg 2>/dev/null || true
-    sleep 2
-  become: yes
+- name: Check if Docker is already installed
+  command: docker --version
+  register: docker_check
   ignore_errors: yes
-
-- name: Remove all apt lock files
-  shell: |
-    rm -f /var/lib/apt/lists/lock
-    rm -f /var/cache/apt/archives/lock
-    rm -f /var/lib/dpkg/lock
-    rm -f /var/lib/dpkg/lock-frontend
-  become: yes
-
-- name: Clean apt cache completely
-  shell: |
-    apt-get clean
-    rm -rf /var/lib/apt/lists/*
-    mkdir -p /var/lib/apt/lists/partial
-  become: yes
-
-- name: Configure dpkg
-  command: dpkg --configure -a
-  become: yes
-  ignore_errors: yes
-
-- name: Wait for system to settle
-  pause:
-    seconds: 3
-
-- name: Force apt-get update
-  shell: apt-get update 2>&1
-  become: yes
-  register: apt_update_raw
-  ignore_errors: yes
-
-- name: Display apt update output
-  debug:
-    var: apt_update_raw.stdout_lines
-  when: apt_update_raw is defined
-
-- name: Update apt cache (retry mechanism)
-  apt:
-    update_cache: yes
-    force_apt_get: yes
-  become: yes
-  register: result
-  retries: 3
-  delay: 10
-  until: result is succeeded
-
-- name: Install required packages
-  apt:
-    name:
-      - apt-transport-https
-      - ca-certificates
-      - curl
-      - gnupg
-      - lsb-release
-      - software-properties-common
-    state: present
-    force_apt_get: yes
-  become: yes
-
-- name: Create directory for apt keyrings
-  file:
-    path: /etc/apt/keyrings
-    state: directory
-    mode: '0755'
-  become: yes
-
-- name: Download Docker GPG key
-  shell: |
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    chmod a+r /etc/apt/keyrings/docker.gpg
-  args:
-    creates: /etc/apt/keyrings/docker.gpg
-  become: yes
-
-- name: Get Ubuntu codename
-  command: lsb_release -cs
-  register: ubuntu_release
   changed_when: false
-
-- name: Get system architecture  
-  command: dpkg --print-architecture
-  register: system_architecture
-  changed_when: false
-
-- name: Add Docker repository
-  copy:
-    dest: /etc/apt/sources.list.d/docker.list
-    content: |
-      deb [arch={{ system_architecture.stdout }} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu {{ ubuntu_release.stdout }} stable
-    mode: '0644'
   become: yes
 
-- name: Update apt cache after adding Docker repo
-  apt:
-    update_cache: yes
-    force_apt_get: yes
-  become: yes
-  retries: 3
-  delay: 5
+- name: Docker installation block
+  block:
+    - name: Remove old Docker repository files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/docker.list
+        - /etc/apt/sources.list.d/archive_uri-https_download_docker_com_linux_ubuntu-jammy.list
+      become: yes
 
-- name: Install Docker packages
-  apt:
-    name:
-      - docker-ce
-      - docker-ce-cli
-      - containerd.io
-      - docker-buildx-plugin
-      - docker-compose-plugin
-    state: present
-    force_apt_get: yes
-  become: yes
+    - name: Stop apt-related services temporarily
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+      loop:
+        - unattended-upgrades
+        - apt-daily.timer
+        - apt-daily-upgrade.timer
+      become: yes
+      ignore_errors: yes
+
+    - name: Kill any running apt processes
+      shell: |
+        killall -9 apt apt-get dpkg 2>/dev/null || true
+        sleep 2
+      become: yes
+      ignore_errors: yes
+
+    - name: Remove all apt lock files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/lib/apt/lists/lock
+        - /var/cache/apt/archives/lock
+        - /var/lib/dpkg/lock
+        - /var/lib/dpkg/lock-frontend
+      become: yes
+
+    - name: Clean apt cache thoroughly
+      shell: |
+        apt-get clean
+        rm -rf /var/lib/apt/lists/*
+        mkdir -p /var/lib/apt/lists/partial
+      become: yes
+
+    - name: Fix any broken packages
+      command: dpkg --configure -a
+      become: yes
+      ignore_errors: yes
+
+    - name: Wait for system to stabilize
+      pause:
+        seconds: 5
+
+    - name: Use Docker convenience script for installation
+      shell: |
+        curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+        sh /tmp/get-docker.sh
+        rm -f /tmp/get-docker.sh
+      args:
+        creates: /usr/bin/docker
+      become: yes
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+  when: docker_check.rc != 0
 
 - name: Ensure Docker service is started and enabled
   systemd:
@@ -138,12 +90,32 @@
     append: yes
   become: yes
 
+- name: Reset connection to apply group changes
+  meta: reset_connection
+
 - name: Verify Docker installation
   command: docker --version
-  register: docker_ver
+  register: docker_version
   changed_when: false
   become: yes
 
-- name: Display Docker version
+- name: Verify Docker Compose plugin
+  command: docker compose version
+  register: compose_version
+  changed_when: false
+  become: yes
+
+- name: Display Docker information
   debug:
-    msg: "Installed: {{ docker_ver.stdout }}"
+    msg:
+      - "Docker: {{ docker_version.stdout }}"
+      - "Docker Compose: {{ compose_version.stdout }}"
+
+- name: Restart apt services
+  systemd:
+    name: "{{ item }}"
+    state: started
+  loop:
+    - unattended-upgrades
+  become: yes
+  ignore_errors: yes

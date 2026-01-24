@@ -1,7 +1,7 @@
 ---
 - name: Setup system and runtime
   hosts: app
-  become: true
+  become: yes
   roles:
     - role: setup
       tags: [setup]
@@ -11,14 +11,14 @@
 
 - name: Deploy application
   hosts: app
-  become: true
+  become: yes
   roles:
     - role: app
       tags: [app]
 
 - name: Configure nginx
   hosts: app
-  become: true
+  become: yes
   roles:
     - role: nginx
       tags: [nginx]
