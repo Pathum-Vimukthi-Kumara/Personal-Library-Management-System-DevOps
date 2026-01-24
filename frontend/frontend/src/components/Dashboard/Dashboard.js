@@ -448,16 +448,16 @@ function Dashboard() {
 
       {/* Add/Edit Modal */}
       {showModal && (
-              {/* Delete Confirmation Modal */}
-              <ConfirmModal
-                show={showDeleteModal}
-                onConfirm={confirmDelete}
-                onCancel={cancelDelete}
-                message="Are you sure you want to delete this book?"
-              />
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl">
             <div className="px-6 pt-6 pb-3 border-b">
+                    {/* Delete Confirmation Modal */}
+                    <ConfirmModal
+                      show={showDeleteModal}
+                      onConfirm={confirmDelete}
+                      onCancel={cancelDelete}
+                      message="Are you sure you want to delete this book?"
+                    />
               <h2 className="text-2xl font-semibold text-slate-800">
                 {editingId ? 'Edit Book' : 'Add New Book'}
               </h2>
