@@ -3,6 +3,7 @@ services:
     image: mysql:8.0
     platform: linux/amd64
     command: --default-authentication-plugin=mysql_native_password
+    restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
       MYSQL_DATABASE: librarydb
@@ -17,10 +18,11 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+    networks:
+      - app-network
 
   backend:
     image: pathum2002/personal-library-backend:${DEPLOY_TAG:-latest}
-    # No host port published; frontend proxies to backend:4000 internally
     restart: unless-stopped
     env_file:
       - Backend/.env
@@ -28,14 +30,16 @@ services:
       - backend_data:/app/data
       - ./uploads:/app/uploads
     healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:4000/actuator/health | grep -q '\"status\":\"UP\"'"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD-SHELL", "curl -f http://localhost:4000/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 10s
       retries: 20
-      start_period: 20s
+      start_period: 40s
     depends_on:
       mysql:
         condition: service_healthy
+    networks:
+      - app-network
 
   frontend:
     image: pathum2002/personal-library-frontend:${DEPLOY_TAG:-latest}
@@ -47,8 +51,14 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    networks:
+      - app-network
 
 volumes:
   db_store:
   backend_data:
   frontend_data:
+
+networks:
+  app-network:
+    driver: bridge

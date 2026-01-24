@@ -84,14 +84,32 @@
   become: yes
   tags: [app]
 
+- name: Ensure db-init.sql exists (create dummy if missing)
+  stat:
+    path: /opt/personal-library/db-init.sql
+  register: db_init_file
+  tags: [app]
+
+- name: Create empty db-init.sql if it doesn't exist
+  file:
+    path: /opt/personal-library/db-init.sql
+    state: touch
+    owner: ansible
+    group: ansible
+    mode: '0644'
+  become: yes
+  when: not db_init_file.stat.exists
+  tags: [app]
+
 - name: Stop and remove existing containers
   shell: |
     export DEPLOY_TAG="{{ deploy_tag | default('latest') }}"
-    docker compose -f compose.yaml down --remove-orphans || true
+    docker compose -f compose.yaml down --remove-orphans
   args:
     chdir: /opt/personal-library
   become: yes
   become_user: ansible
+  ignore_errors: yes
   tags: [app]
 
 - name: Pull latest Docker images
@@ -128,9 +146,9 @@
   when: compose_up.stdout_lines is defined
   tags: [app]
 
-- name: Wait for services to start
+- name: Wait for containers to start
   pause:
-    seconds: 20
+    seconds: 15
   tags: [app]
 
 - name: Check running containers
@@ -145,41 +163,36 @@
     msg: "{{ container_status.stdout_lines }}"
   tags: [app]
 
-- name: Wait for backend to be healthy (if port 4000 exposed)
-  wait_for:
-    host: localhost
-    port: 4000
-    delay: 5
-    timeout: 60
-    state: started
+- name: Check MySQL container health
+  shell: docker inspect --format='{{.State.Health.Status}}' $(docker ps -qf "name=mysql")
+  register: mysql_health
+  become: yes
+  become_user: ansible
   ignore_errors: yes
   tags: [app]
 
-- name: Wait for frontend to be available
+- name: Check backend container health
+  shell: docker inspect --format='{{.State.Health.Status}}' $(docker ps -qf "name=backend")
+  register: backend_health
+  become: yes
+  become_user: ansible
+  ignore_errors: yes
+  tags: [app]
+
+- name: Display container health status
+  debug:
+    msg:
+      - "MySQL Health: {{ mysql_health.stdout | default('N/A') }}"
+      - "Backend Health: {{ backend_health.stdout | default('N/A') }}"
+  tags: [app]
+
+- name: Wait for frontend to be accessible
   wait_for:
     host: localhost
     port: 3008
     delay: 5
     timeout: 60
     state: started
-  ignore_errors: yes
-  tags: [app]
-
-- name: Check backend health endpoint (if accessible)
-  uri:
-    url: http://localhost:4000/actuator/health
-    status_code: 200
-    timeout: 5
-  retries: 10
-  delay: 5
-  register: backend_health
-  until: backend_health.status == 200
-  ignore_errors: yes
-  tags: [app]
-
-- name: Display backend health status
-  debug:
-    msg: "Backend health check: {{ 'PASSED' if backend_health is succeeded else 'FAILED or NOT ACCESSIBLE' }}"
   tags: [app]
 
 - name: Check frontend accessibility
@@ -189,30 +202,40 @@
     timeout: 5
   retries: 10
   delay: 5
-  register: frontend_health
-  until: frontend_health.status == 200
-  ignore_errors: yes
+  register: frontend_check
+  until: frontend_check.status == 200
   tags: [app]
 
-- name: Display frontend status
-  debug:
-    msg: "Frontend health check: {{ 'PASSED' if frontend_health is succeeded else 'FAILED' }}"
-  tags: [app]
-
-- name: Get backend logs if unhealthy
-  shell: docker compose -f compose.yaml logs --tail=30 backend
+- name: Get backend logs (last 50 lines)
+  shell: docker compose -f compose.yaml logs --tail=50 backend
   args:
     chdir: /opt/personal-library
   register: backend_logs
   become: yes
   become_user: ansible
-  when: backend_health is failed
+  when: backend_health.stdout is defined and backend_health.stdout != 'healthy'
   tags: [app]
 
 - name: Display backend logs if unhealthy
   debug:
     msg: "{{ backend_logs.stdout_lines }}"
-  when: backend_health is failed and backend_logs.stdout_lines is defined
+  when: backend_logs.stdout_lines is defined
+  tags: [app]
+
+- name: Get MySQL logs if unhealthy
+  shell: docker compose -f compose.yaml logs --tail=30 mysql
+  args:
+    chdir: /opt/personal-library
+  register: mysql_logs
+  become: yes
+  become_user: ansible
+  when: mysql_health.stdout is defined and mysql_health.stdout != 'healthy'
+  tags: [app]
+
+- name: Display MySQL logs if unhealthy
+  debug:
+    msg: "{{ mysql_logs.stdout_lines }}"
+  when: mysql_logs.stdout_lines is defined
   tags: [app]
 
 - name: Remove unused Docker images
@@ -221,19 +244,18 @@
   become_user: ansible
   tags: [app]
 
-- name: Restart nginx
-  service:
-    name: nginx
-    state: restarted
-  become: yes
-  tags: [app]
-
 - name: Final deployment summary
   debug:
     msg:
-      - "=== Deployment Summary ==="
+      - "╔════════════════════════════════════════╗"
+      - "║     DEPLOYMENT SUMMARY                 ║"
+      - "╚════════════════════════════════════════╝"
       - "Deploy Tag: {{ deploy_tag | default('latest') }}"
-      - "Backend Health: {{ 'OK' if backend_health is succeeded else 'UNKNOWN' }}"
-      - "Frontend Status: {{ 'OK' if frontend_health is succeeded else 'UNKNOWN' }}"
-      - "Check application at: http://{{ ansible_host }}:3008"
+      - "MySQL Status: {{ mysql_health.stdout | default('unknown') }}"
+      - "Backend Status: {{ backend_health.stdout | default('unknown') }}"
+      - "Frontend Status: {{ 'accessible' if frontend_check.status == 200 else 'not accessible' }}"
+      - ""
+      - "🌐 Application URL: http://{{ ansible_host }}:3008"
+      - ""
+      - "✅ Deployment complete!"
   tags: [app]
