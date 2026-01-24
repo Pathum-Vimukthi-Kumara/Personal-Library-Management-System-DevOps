@@ -6,8 +6,9 @@
     - role: setup
       tags: [setup]
 
-    - role: docker
-      tags: [docker]
+    # Skip Docker installation - already installed on server
+    # - role: docker
+    #   tags: [docker]
 
 - name: Deploy application
   hosts: app

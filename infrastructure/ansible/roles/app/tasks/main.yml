@@ -1,121 +1,143 @@
 ---
-- name: Check if Docker is already installed
-  command: docker --version
-  register: docker_check
-  ignore_errors: yes
-  changed_when: false
+- name: Install git
+  apt:
+    name: git
+    state: present
+    update_cache: yes
   become: yes
+  tags: [app]
 
-- name: Docker installation block
-  block:
-    - name: Remove old Docker repository files
-      file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /etc/apt/sources.list.d/docker.list
-        - /etc/apt/sources.list.d/archive_uri-https_download_docker_com_linux_ubuntu-jammy.list
-      become: yes
-
-    - name: Stop apt-related services temporarily
-      systemd:
-        name: "{{ item }}"
-        state: stopped
-      loop:
-        - unattended-upgrades
-        - apt-daily.timer
-        - apt-daily-upgrade.timer
-      become: yes
-      ignore_errors: yes
-
-    - name: Kill any running apt processes
-      shell: |
-        killall -9 apt apt-get dpkg 2>/dev/null || true
-        sleep 2
-      become: yes
-      ignore_errors: yes
-
-    - name: Remove all apt lock files
-      file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /var/lib/apt/lists/lock
-        - /var/cache/apt/archives/lock
-        - /var/lib/dpkg/lock
-        - /var/lib/dpkg/lock-frontend
-      become: yes
-
-    - name: Clean apt cache thoroughly
-      shell: |
-        apt-get clean
-        rm -rf /var/lib/apt/lists/*
-        mkdir -p /var/lib/apt/lists/partial
-      become: yes
-
-    - name: Fix any broken packages
-      command: dpkg --configure -a
-      become: yes
-      ignore_errors: yes
-
-    - name: Wait for system to stabilize
-      pause:
-        seconds: 5
-
-    - name: Use Docker convenience script for installation
-      shell: |
-        curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
-        sh /tmp/get-docker.sh
-        rm -f /tmp/get-docker.sh
-      args:
-        creates: /usr/bin/docker
-      become: yes
-      environment:
-        DEBIAN_FRONTEND: noninteractive
-
-  when: docker_check.rc != 0
-
-- name: Ensure Docker service is started and enabled
-  systemd:
-    name: docker
-    state: started
-    enabled: yes
-    daemon_reload: yes
+- name: Ensure app directory exists
+  file:
+    path: /opt/personal-library
+    state: directory
+    owner: ansible
+    group: ansible
+    mode: '0755'
   become: yes
+  tags: [app]
 
-- name: Add ansible user to docker group
-  user:
-    name: ansible
-    groups: docker
-    append: yes
+- name: Clone or update repository
+  git:
+    repo: "https://github.com/Pathum-Vimukthi-Kumara/Personal-Library-Management-System-DevOps.git"
+    dest: /opt/personal-library
+    version: master
+    force: yes
   become: yes
+  become_user: ansible
+  tags: [app]
 
-- name: Reset connection to apply group changes
-  meta: reset_connection
-
-- name: Verify Docker installation
-  command: docker --version
-  register: docker_version
-  changed_when: false
+- name: Ensure backend env exists
+  shell: |
+    if [ ! -f Backend/.env ] && [ -f Backend/.env.example ]; then
+      cp Backend/.env.example Backend/.env
+    fi
+  args:
+    chdir: /opt/personal-library
   become: yes
+  become_user: ansible
+  tags: [app]
 
-- name: Verify Docker Compose plugin
-  command: docker compose version
-  register: compose_version
-  changed_when: false
-  become: yes
+- name: Compute JWT secret if undefined
+  set_fact:
+    computed_jwt_secret: "{{ jwt_secret | default(lookup('password', '/dev/null chars=ascii_letters,digits length=64')) }}"
+  tags: [app]
 
-- name: Display Docker information
-  debug:
-    msg:
-      - "Docker: {{ docker_version.stdout }}"
-      - "Docker Compose: {{ compose_version.stdout }}"
-
-- name: Restart apt services
-  systemd:
-    name: "{{ item }}"
-    state: started
+- name: Set JWT values (from Ansible vars)
+  lineinfile:
+    path: /opt/personal-library/Backend/.env
+    regexp: '^{{ item.key }}='
+    line: '{{ item.key }}={{ item.value }}'
+    create: yes
   loop:
-    - unattended-upgrades
+    - { key: 'JWT_SECRET', value: '{{ computed_jwt_secret }}' }
+    - { key: 'JWT_EXPIRATION', value: '86400000' }
   become: yes
+  become_user: ansible
+  tags: [app]
+
+- name: Create .env file for docker compose
+  copy:
+    content: |
+      DEPLOY_TAG={{ deploy_tag | default('latest') }}
+    dest: /opt/personal-library/.env
+    owner: ansible
+    group: ansible
+    mode: '0644'
+  become: yes
+  tags: [app]
+
+- name: Pull latest Docker images from Docker Hub
+  community.docker.docker_compose_v2:
+    project_src: /opt/personal-library
+    files:
+      - compose.yaml
+    state: present
+    pull: always
+  environment:
+    DEPLOY_TAG: "{{ deploy_tag | default('latest') }}"
+  become: yes
+  become_user: ansible
+  tags: [app]
+  register: pull_result
+
+- name: Stop running containers
+  community.docker.docker_compose_v2:
+    project_src: /opt/personal-library
+    files:
+      - compose.yaml
+    state: absent
+  environment:
+    DEPLOY_TAG: "{{ deploy_tag | default('latest') }}"
+  become: yes
+  become_user: ansible
   ignore_errors: yes
+  tags: [app]
+
+- name: Start containers using pulled images
+  community.docker.docker_compose_v2:
+    project_src: /opt/personal-library
+    files:
+      - compose.yaml
+    state: present
+  environment:
+    DEPLOY_TAG: "{{ deploy_tag | default('latest') }}"
+  become: yes
+  become_user: ansible
+  tags: [app]
+  register: compose_up
+
+- name: Wait for backend to be healthy
+  uri:
+    url: http://localhost:8080/actuator/health
+    status_code: 200
+  retries: 30
+  delay: 10
+  become: yes
+  tags: [app]
+  ignore_errors: yes
+
+- name: Wait for frontend to be healthy
+  uri:
+    url: http://localhost:3000
+    status_code: 200
+  retries: 30
+  delay: 10
+  become: yes
+  tags: [app]
+  ignore_errors: yes
+
+- name: Remove unused Docker images
+  docker_prune:
+    images: yes
+    images_filters:
+      dangling: true
+  become: yes
+  tags: [app]
+
+- name: Restart nginx
+  service:
+    name: nginx
+    state: restarted
+  become: yes
+  tags: [app]
