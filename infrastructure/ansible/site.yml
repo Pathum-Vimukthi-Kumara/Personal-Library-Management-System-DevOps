@@ -6,13 +6,23 @@
     - role: setup
       tags: [setup]
 
-    # Skip Docker installation - already installed on server
-    # - role: docker
-    #   tags: [docker]
+    - role: docker
+      tags: [docker]
 
 - name: Deploy application
   hosts: app
   become: yes
+  pre_tasks:
+    - name: Remove problematic repository files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/jenkins.list
+        - /etc/apt/sources.list.d/jenkins.list.save
+      ignore_errors: yes
+      tags: [app]
+      
   roles:
     - role: app
       tags: [app]

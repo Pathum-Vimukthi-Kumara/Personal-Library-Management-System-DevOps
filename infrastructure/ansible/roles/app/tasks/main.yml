@@ -1,12 +1,34 @@
 ---
-- name: Install git and curl
+- name: Check if git is installed
+  command: git --version
+  register: git_check
+  ignore_errors: yes
+  changed_when: false
+  tags: [app]
+
+- name: Check if curl is installed
+  command: curl --version
+  register: curl_check
+  ignore_errors: yes
+  changed_when: false
+  tags: [app]
+
+- name: Install git (without apt update)
   apt:
-    name: 
-      - git
-      - curl
+    name: git
     state: present
-    update_cache: yes
+    update_cache: no
   become: yes
+  when: git_check.rc != 0
+  tags: [app]
+
+- name: Install curl (without apt update)
+  apt:
+    name: curl
+    state: present
+    update_cache: no
+  become: yes
+  when: curl_check.rc != 0
   tags: [app]
 
 - name: Ensure app directory exists
