@@ -1,7 +1,9 @@
 ---
-- name: Install git
+- name: Install git and curl
   apt:
-    name: git
+    name: 
+      - git
+      - curl
     state: present
     update_cache: yes
   become: yes
@@ -27,15 +29,31 @@
   become_user: ansible
   tags: [app]
 
-- name: Ensure backend env exists
-  shell: |
-    if [ ! -f Backend/.env ] && [ -f Backend/.env.example ]; then
-      cp Backend/.env.example Backend/.env
-    fi
-  args:
-    chdir: /opt/personal-library
+- name: Ensure Backend directory exists
+  file:
+    path: /opt/personal-library/Backend
+    state: directory
+    owner: ansible
+    group: ansible
+    mode: '0755'
   become: yes
-  become_user: ansible
+  tags: [app]
+
+- name: Create backend .env file
+  copy:
+    content: |
+      # Backend environment configuration
+      SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/librarydb
+      SPRING_DATASOURCE_USERNAME=libraryuser
+      SPRING_DATASOURCE_PASSWORD=librarypass
+      SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      SPRING_JPA_SHOW_SQL=false
+      SERVER_PORT=4000
+    dest: /opt/personal-library/Backend/.env
+    owner: ansible
+    group: ansible
+    mode: '0644'
+  become: yes
   tags: [app]
 
 - name: Compute JWT secret if undefined
@@ -43,7 +61,7 @@
     computed_jwt_secret: "{{ jwt_secret | default(lookup('password', '/dev/null chars=ascii_letters,digits length=64')) }}"
   tags: [app]
 
-- name: Set JWT values (from Ansible vars)
+- name: Set JWT values in backend .env
   lineinfile:
     path: /opt/personal-library/Backend/.env
     regexp: '^{{ item.key }}='
@@ -56,83 +74,151 @@
   become_user: ansible
   tags: [app]
 
-- name: Create .env file for docker compose
-  copy:
-    content: |
-      DEPLOY_TAG={{ deploy_tag | default('latest') }}
-    dest: /opt/personal-library/.env
+- name: Ensure uploads directory exists
+  file:
+    path: /opt/personal-library/uploads
+    state: directory
     owner: ansible
     group: ansible
-    mode: '0644'
+    mode: '0755'
   become: yes
   tags: [app]
 
-- name: Pull latest Docker images from Docker Hub
-  community.docker.docker_compose_v2:
-    project_src: /opt/personal-library
-    files:
-      - compose.yaml
-    state: present
-    pull: always
-  environment:
-    DEPLOY_TAG: "{{ deploy_tag | default('latest') }}"
+- name: Stop and remove existing containers
+  shell: |
+    export DEPLOY_TAG="{{ deploy_tag | default('latest') }}"
+    docker compose -f compose.yaml down --remove-orphans || true
+  args:
+    chdir: /opt/personal-library
+  become: yes
+  become_user: ansible
+  tags: [app]
+
+- name: Pull latest Docker images
+  shell: |
+    export DEPLOY_TAG="{{ deploy_tag | default('latest') }}"
+    docker compose -f compose.yaml pull
+  args:
+    chdir: /opt/personal-library
   become: yes
   become_user: ansible
   tags: [app]
   register: pull_result
 
-- name: Stop running containers
-  community.docker.docker_compose_v2:
-    project_src: /opt/personal-library
-    files:
-      - compose.yaml
-    state: absent
-  environment:
-    DEPLOY_TAG: "{{ deploy_tag | default('latest') }}"
-  become: yes
-  become_user: ansible
-  ignore_errors: yes
+- name: Display pull result
+  debug:
+    var: pull_result.stdout_lines
+  when: pull_result.stdout_lines is defined
   tags: [app]
 
-- name: Start containers using pulled images
-  community.docker.docker_compose_v2:
-    project_src: /opt/personal-library
-    files:
-      - compose.yaml
-    state: present
-  environment:
-    DEPLOY_TAG: "{{ deploy_tag | default('latest') }}"
+- name: Start containers with docker compose
+  shell: |
+    export DEPLOY_TAG="{{ deploy_tag | default('latest') }}"
+    docker compose -f compose.yaml up -d
+  args:
+    chdir: /opt/personal-library
   become: yes
   become_user: ansible
   tags: [app]
   register: compose_up
 
-- name: Wait for backend to be healthy
-  uri:
-    url: http://localhost:8080/actuator/health
-    status_code: 200
-  retries: 30
-  delay: 10
-  become: yes
+- name: Display compose up result
+  debug:
+    var: compose_up.stdout_lines
+  when: compose_up.stdout_lines is defined
   tags: [app]
-  ignore_errors: yes
 
-- name: Wait for frontend to be healthy
-  uri:
-    url: http://localhost:3000
-    status_code: 200
-  retries: 30
-  delay: 10
-  become: yes
+- name: Wait for services to start
+  pause:
+    seconds: 20
   tags: [app]
+
+- name: Check running containers
+  shell: docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+  register: container_status
+  become: yes
+  become_user: ansible
+  tags: [app]
+
+- name: Display container status
+  debug:
+    msg: "{{ container_status.stdout_lines }}"
+  tags: [app]
+
+- name: Wait for backend to be healthy (if port 4000 exposed)
+  wait_for:
+    host: localhost
+    port: 4000
+    delay: 5
+    timeout: 60
+    state: started
   ignore_errors: yes
+  tags: [app]
+
+- name: Wait for frontend to be available
+  wait_for:
+    host: localhost
+    port: 3008
+    delay: 5
+    timeout: 60
+    state: started
+  ignore_errors: yes
+  tags: [app]
+
+- name: Check backend health endpoint (if accessible)
+  uri:
+    url: http://localhost:4000/actuator/health
+    status_code: 200
+    timeout: 5
+  retries: 10
+  delay: 5
+  register: backend_health
+  until: backend_health.status == 200
+  ignore_errors: yes
+  tags: [app]
+
+- name: Display backend health status
+  debug:
+    msg: "Backend health check: {{ 'PASSED' if backend_health is succeeded else 'FAILED or NOT ACCESSIBLE' }}"
+  tags: [app]
+
+- name: Check frontend accessibility
+  uri:
+    url: http://localhost:3008
+    status_code: 200
+    timeout: 5
+  retries: 10
+  delay: 5
+  register: frontend_health
+  until: frontend_health.status == 200
+  ignore_errors: yes
+  tags: [app]
+
+- name: Display frontend status
+  debug:
+    msg: "Frontend health check: {{ 'PASSED' if frontend_health is succeeded else 'FAILED' }}"
+  tags: [app]
+
+- name: Get backend logs if unhealthy
+  shell: docker compose -f compose.yaml logs --tail=30 backend
+  args:
+    chdir: /opt/personal-library
+  register: backend_logs
+  become: yes
+  become_user: ansible
+  when: backend_health is failed
+  tags: [app]
+
+- name: Display backend logs if unhealthy
+  debug:
+    msg: "{{ backend_logs.stdout_lines }}"
+  when: backend_health is failed and backend_logs.stdout_lines is defined
+  tags: [app]
 
 - name: Remove unused Docker images
-  docker_prune:
-    images: yes
-    images_filters:
-      dangling: true
+  shell: docker image prune -af --filter "until=72h"
   become: yes
+  become_user: ansible
   tags: [app]
 
 - name: Restart nginx
@@ -140,4 +226,14 @@
     name: nginx
     state: restarted
   become: yes
+  tags: [app]
+
+- name: Final deployment summary
+  debug:
+    msg:
+      - "=== Deployment Summary ==="
+      - "Deploy Tag: {{ deploy_tag | default('latest') }}"
+      - "Backend Health: {{ 'OK' if backend_health is succeeded else 'UNKNOWN' }}"
+      - "Frontend Status: {{ 'OK' if frontend_health is succeeded else 'UNKNOWN' }}"
+      - "Check application at: http://{{ ansible_host }}:3008"
   tags: [app]
