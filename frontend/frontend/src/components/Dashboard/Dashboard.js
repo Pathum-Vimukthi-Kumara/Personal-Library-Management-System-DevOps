@@ -451,7 +451,7 @@ function Dashboard() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl">
             <div className="px-6 pt-6 pb-3 border-b">
-                    {/* Delete Confirmation Modal */}
+                    {/* Delete Confirmation Modal (always available) */}
                     <ConfirmModal
                       show={showDeleteModal}
                       onConfirm={confirmDelete}
