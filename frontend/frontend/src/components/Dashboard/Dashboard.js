@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { getBooks, addBook, updateBook, deleteBook, removeAuthToken } from '../../services/api';
 import { API_BASE_URL } from '../../services/api';
 import Sidebar from '../Sidebar/Sidebar';
-import ConfirmModal from '../ConfirmModal';
 
 function Dashboard() {
   const [books, setBooks] = useState([]);
@@ -13,9 +12,6 @@ function Dashboard() {
   const [editingId, setEditingId] = useState(null);
   const [username, setUsername] = useState('');
   const [currentView, setCurrentView] = useState('all'); // 'dashboard' | 'completed' | 'remaining' | 'all'
-  // Modal for delete confirmation
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deleteId, setDeleteId] = useState(null);
   // Filters & search
   const [search, setSearch] = useState('');
   const [activeLetter, setActiveLetter] = useState('');
@@ -204,27 +200,15 @@ function Dashboard() {
     setShowModal(true);
   };
 
-  const handleDelete = (id) => {
-    setDeleteId(id);
-    setShowDeleteModal(true);
-  };
-
-  const confirmDelete = async () => {
-    if (!deleteId) return;
-    try {
-      await deleteBook(deleteId);
-      fetchBooks();
-    } catch (err) {
-      setError('Failed to delete book');
-    } finally {
-      setShowDeleteModal(false);
-      setDeleteId(null);
+  const handleDelete = async (id) => {
+    if (window.confirm('Are you sure you want to delete this book?')) {
+      try {
+        await deleteBook(id);
+        fetchBooks();
+      } catch (err) {
+        setError('Failed to delete book');
+      }
     }
-  };
-
-  const cancelDelete = () => {
-    setShowDeleteModal(false);
-    setDeleteId(null);
   };
 
   const handleAddNew = () => {
@@ -446,18 +430,11 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Add/Edit Modal */}
+      {/* Modal */}
       {showModal && (
-        <div className={`fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50${showDeleteModal ? ' pointer-events-none opacity-60' : ''}`}>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl">
             <div className="px-6 pt-6 pb-3 border-b">
-                    {/* Delete Confirmation Modal (always available) */}
-                    <ConfirmModal
-                      show={showDeleteModal}
-                      onConfirm={confirmDelete}
-                      onCancel={cancelDelete}
-                      message="Are you sure you want to delete this book?"
-                    />
               <h2 className="text-2xl font-semibold text-slate-800">
                 {editingId ? 'Edit Book' : 'Add New Book'}
               </h2>
