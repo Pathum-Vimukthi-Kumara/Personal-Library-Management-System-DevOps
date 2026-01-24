@@ -1,54 +1,63 @@
 ---
-- name: Remove corrupted docker repo file
+- name: Remove old Docker repository file
   file:
     path: /etc/apt/sources.list.d/docker.list
     state: absent
   become: yes
 
-- name: Force cleanup of apt
+- name: Kill any apt/dpkg processes
   shell: |
-    set -e
-    # Kill any apt processes
-    killall apt apt-get dpkg 2>/dev/null || true
-    
-    # Remove all lock files
+    killall -9 apt apt-get dpkg 2>/dev/null || true
+    sleep 2
+  become: yes
+  ignore_errors: yes
+
+- name: Remove all apt lock files
+  shell: |
     rm -f /var/lib/apt/lists/lock
     rm -f /var/cache/apt/archives/lock
-    rm -f /var/lib/dpkg/lock*
-    
-    # Clean apt
+    rm -f /var/lib/dpkg/lock
+    rm -f /var/lib/dpkg/lock-frontend
+  become: yes
+
+- name: Clean apt cache completely
+  shell: |
     apt-get clean
     rm -rf /var/lib/apt/lists/*
-    
-    # Recreate directory
     mkdir -p /var/lib/apt/lists/partial
-    
-    # Configure dpkg
-    dpkg --configure -a
+  become: yes
+
+- name: Configure dpkg
+  command: dpkg --configure -a
   become: yes
   ignore_errors: yes
 
-- name: Wait a moment for filesystem to settle
+- name: Wait for system to settle
   pause:
-    seconds: 5
+    seconds: 3
 
-- name: Try apt update with fix-missing
-  shell: apt-get update --fix-missing
+- name: Force apt-get update
+  shell: apt-get update 2>&1
   become: yes
-  register: apt_fix
+  register: apt_update_raw
   ignore_errors: yes
 
-- name: Update apt cache (final attempt)
+- name: Display apt update output
+  debug:
+    var: apt_update_raw.stdout_lines
+  when: apt_update_raw is defined
+
+- name: Update apt cache (retry mechanism)
   apt:
     update_cache: yes
     force_apt_get: yes
   become: yes
+  register: result
   retries: 3
   delay: 10
-  register: apt_result
-  until: apt_result is succeeded
+  until: result is succeeded
 
-- name: Install Docker prerequisites
+- name: Install required packages
   apt:
     name:
       - apt-transport-https
@@ -56,18 +65,19 @@
       - curl
       - gnupg
       - lsb-release
+      - software-properties-common
     state: present
     force_apt_get: yes
   become: yes
 
-- name: Create keyrings directory
+- name: Create directory for apt keyrings
   file:
     path: /etc/apt/keyrings
     state: directory
     mode: '0755'
   become: yes
 
-- name: Download and install Docker GPG key
+- name: Download Docker GPG key
   shell: |
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
     chmod a+r /etc/apt/keyrings/docker.gpg
@@ -76,24 +86,24 @@
   become: yes
 
 - name: Get Ubuntu codename
-  shell: lsb_release -cs
-  register: ubuntu_codename
+  command: lsb_release -cs
+  register: ubuntu_release
   changed_when: false
 
-- name: Get system architecture
-  shell: dpkg --print-architecture
-  register: system_arch
+- name: Get system architecture  
+  command: dpkg --print-architecture
+  register: system_architecture
   changed_when: false
 
 - name: Add Docker repository
   copy:
-    content: |
-      deb [arch={{ system_arch.stdout }} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu {{ ubuntu_codename.stdout }} stable
     dest: /etc/apt/sources.list.d/docker.list
+    content: |
+      deb [arch={{ system_architecture.stdout }} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu {{ ubuntu_release.stdout }} stable
     mode: '0644'
   become: yes
 
-- name: Update apt after adding Docker repo
+- name: Update apt cache after adding Docker repo
   apt:
     update_cache: yes
     force_apt_get: yes
@@ -101,7 +111,7 @@
   retries: 3
   delay: 5
 
-- name: Install Docker Engine
+- name: Install Docker packages
   apt:
     name:
       - docker-ce
@@ -113,7 +123,7 @@
     force_apt_get: yes
   become: yes
 
-- name: Start and enable Docker service
+- name: Ensure Docker service is started and enabled
   systemd:
     name: docker
     state: started
@@ -127,13 +137,13 @@
     groups: docker
     append: yes
   become: yes
-  notify: reset ssh connection
 
 - name: Verify Docker installation
   command: docker --version
-  register: docker_version
+  register: docker_ver
   changed_when: false
+  become: yes
 
 - name: Display Docker version
   debug:
-    msg: "Docker installed: {{ docker_version.stdout }}"
+    msg: "Installed: {{ docker_ver.stdout }}"
