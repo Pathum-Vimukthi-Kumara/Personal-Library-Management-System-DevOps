@@ -4,8 +4,7 @@
     name: git
     state: present
     update_cache: yes
-  become: true
-  become_user: root
+  become: yes
   tags: [app]
 
 - name: Ensure app directory exists
@@ -15,8 +14,7 @@
     owner: ansible
     group: ansible
     mode: '0755'
-  become: true
-  become_user: root
+  become: yes
   tags: [app]
 
 - name: Clone or update repository
@@ -25,10 +23,9 @@
     dest: /opt/personal-library
     version: master
     force: yes
-  become: true
+  become: yes
   become_user: ansible
   tags: [app]
-
 
 - name: Ensure backend env exists
   shell: |
@@ -37,13 +34,13 @@
     fi
   args:
     chdir: /opt/personal-library
-  become: true
+  become: yes
   become_user: ansible
   tags: [app]
 
 - name: Compute JWT secret if undefined
   set_fact:
-    computed_jwt_secret: "{{ jwt_secret | default(lookup('password', '/dev/null', chars='ascii_letters,digits', length=64)) }}"
+    computed_jwt_secret: "{{ jwt_secret | default(lookup('password', '/dev/null chars=ascii_letters,digits length=64')) }}"
   tags: [app]
 
 - name: Set JWT values (from Ansible vars)
@@ -55,55 +52,92 @@
   loop:
     - { key: 'JWT_SECRET', value: '{{ computed_jwt_secret }}' }
     - { key: 'JWT_EXPIRATION', value: '86400000' }
-  become: true
+  become: yes
   become_user: ansible
   tags: [app]
 
-# Pull and deploy images from Docker Hub (built by Jenkins)
+- name: Create .env file for docker compose
+  copy:
+    content: |
+      DEPLOY_TAG={{ deploy_tag | default('latest') }}
+    dest: /opt/personal-library/.env
+    owner: ansible
+    group: ansible
+    mode: '0644'
+  become: yes
+  tags: [app]
+
 - name: Pull latest Docker images from Docker Hub
-  command: docker compose -f compose.yaml pull
-  args:
-    chdir: /opt/personal-library
+  community.docker.docker_compose_v2:
+    project_src: /opt/personal-library
+    files:
+      - compose.yaml
+    state: present
+    pull: always
   environment:
     DEPLOY_TAG: "{{ deploy_tag | default('latest') }}"
-  become: true
+  become: yes
   become_user: ansible
   tags: [app]
+  register: pull_result
 
 - name: Stop running containers
-  command: docker compose -f compose.yaml down
-  args:
-    chdir: /opt/personal-library
-  ignore_errors: true
+  community.docker.docker_compose_v2:
+    project_src: /opt/personal-library
+    files:
+      - compose.yaml
+    state: absent
   environment:
     DEPLOY_TAG: "{{ deploy_tag | default('latest') }}"
-  become: true
+  become: yes
   become_user: ansible
+  ignore_errors: yes
   tags: [app]
 
 - name: Start containers using pulled images
-  command: docker compose -f compose.yaml up -d
-  args:
-    chdir: /opt/personal-library
+  community.docker.docker_compose_v2:
+    project_src: /opt/personal-library
+    files:
+      - compose.yaml
+    state: present
   environment:
     DEPLOY_TAG: "{{ deploy_tag | default('latest') }}"
-  become: true
+  become: yes
   become_user: ansible
   tags: [app]
+  register: compose_up
 
-# Optional cleanup of unused images
-- name: Remove unused Docker images
-  command: docker image prune -f
-  become: true
-  become_user: root
+- name: Wait for backend to be healthy
+  uri:
+    url: http://localhost:8080/actuator/health
+    status_code: 200
+  retries: 30
+  delay: 10
+  become: yes
   tags: [app]
+  ignore_errors: yes
 
- 
+- name: Wait for frontend to be healthy
+  uri:
+    url: http://localhost:3000
+    status_code: 200
+  retries: 30
+  delay: 10
+  become: yes
+  tags: [app]
+  ignore_errors: yes
+
+- name: Remove unused Docker images
+  docker_prune:
+    images: yes
+    images_filters:
+      dangling: true
+  become: yes
+  tags: [app]
 
 - name: Restart nginx
   service:
     name: nginx
     state: restarted
-  become: true
-  become_user: root
+  become: yes
   tags: [app]
