@@ -164,17 +164,17 @@
 
 - name: Display compose up result
   debug:
-    var: compose_up.stdout_lines
-  when: compose_up.stdout_lines is defined
+    var: compose_up.stderr_lines
+  when: compose_up.stderr_lines is defined
   tags: [app]
 
 - name: Wait for containers to start
   pause:
-    seconds: 15
+    seconds: 20
   tags: [app]
 
 - name: Check running containers
-  shell: docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+  command: docker ps
   register: container_status
   become: yes
   become_user: ansible
@@ -186,7 +186,7 @@
   tags: [app]
 
 - name: Check MySQL container health
-  shell: docker inspect --format='{{.State.Health.Status}}' $(docker ps -qf "name=mysql")
+  shell: docker inspect --format='{% raw %}{{.State.Health.Status}}{% endraw %}' $(docker ps -qf "name=mysql")
   register: mysql_health
   become: yes
   become_user: ansible
@@ -194,7 +194,7 @@
   tags: [app]
 
 - name: Check backend container health
-  shell: docker inspect --format='{{.State.Health.Status}}' $(docker ps -qf "name=backend")
+  shell: docker inspect --format='{% raw %}{{.State.Health.Status}}{% endraw %}' $(docker ps -qf "name=backend")
   register: backend_health
   become: yes
   become_user: ansible
@@ -212,8 +212,8 @@
   wait_for:
     host: localhost
     port: 3008
-    delay: 5
-    timeout: 60
+    delay: 10
+    timeout: 90
     state: started
   tags: [app]
 
@@ -222,7 +222,7 @@
     url: http://localhost:3008
     status_code: 200
     timeout: 5
-  retries: 10
+  retries: 15
   delay: 5
   register: frontend_check
   until: frontend_check.status == 200
@@ -269,15 +269,15 @@
 - name: Final deployment summary
   debug:
     msg:
-      - "╔════════════════════════════════════════╗"
-      - "║     DEPLOYMENT SUMMARY                 ║"
-      - "╚════════════════════════════════════════╝"
+      - "=========================================="
+      - "       DEPLOYMENT SUMMARY"
+      - "=========================================="
       - "Deploy Tag: {{ deploy_tag | default('latest') }}"
       - "MySQL Status: {{ mysql_health.stdout | default('unknown') }}"
       - "Backend Status: {{ backend_health.stdout | default('unknown') }}"
       - "Frontend Status: {{ 'accessible' if frontend_check.status == 200 else 'not accessible' }}"
       - ""
-      - "🌐 Application URL: http://{{ ansible_host }}:3008"
+      - "Application URL: http://{{ ansible_host }}:3008"
       - ""
-      - "✅ Deployment complete!"
+      - "Deployment complete!"
   tags: [app]
