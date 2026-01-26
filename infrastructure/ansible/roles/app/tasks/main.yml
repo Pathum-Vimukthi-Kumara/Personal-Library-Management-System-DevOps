@@ -61,6 +61,16 @@
   become: yes
   tags: [app]
 
+- name: Ensure uploads/images directory exists
+  file:
+    path: /opt/personal-library/uploads/images
+    state: directory
+    owner: ansible
+    group: ansible
+    mode: '0755'
+  become: yes
+  tags: [app]
+
 - name: Create backend .env file
   copy:
     content: |
@@ -71,7 +81,7 @@
       SPRING_JPA_HIBERNATE_DDL_AUTO=update
       SPRING_JPA_SHOW_SQL=false
       SERVER_PORT=4000
-    dest: /opt/personal-library/Backend/.env
+    dest: /opt/personal-library/uploads/images/.env
     owner: ansible
     group: ansible
     mode: '0644'
@@ -85,7 +95,7 @@
 
 - name: Set JWT values in backend .env
   lineinfile:
-    path: /opt/personal-library/Backend/.env
+    path: /opt/personal-library/uploads/images/.env
     regexp: '^{{ item.key }}='
     line: '{{ item.key }}={{ item.value }}'
     create: yes
