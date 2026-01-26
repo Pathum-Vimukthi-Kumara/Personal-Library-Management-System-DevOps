@@ -1,6 +1,6 @@
 # 📚 Personal Library Management System
 
-[![Build Status](https://img.shields.io/badge/build-N/A-lightgrey)](https://example.com) [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://www.docker.com) [!
+ [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://www.docker.com)
 
 A full-stack, containerized web application for cataloging and managing a personal library. Features include book CRUD, search, user registration, file uploads for covers, REST APIs, and automated deployment tooling.
 
