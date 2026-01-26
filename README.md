@@ -2,9 +2,9 @@
 
 [![Build Status](https://img.shields.io/badge/build-N/A-lightgrey)](https://example.com)
 [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://www.docker.com)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-A full-stack, containerized web application to catalog and manage a personal library. Add, search, borrow/return books, upload cover images, and manage users — built for maintainability, local development parity, and automated deployments.
+
+A full-stack, containerized web application to catalog and manage a personal library. Add, search, borrow/return books, upload cover images, and manage users built for maintainability, local development parity, and automated deployments.
 
 ## ✨ Key Features
 - Browse and search a book catalog with metadata and cover images
@@ -89,8 +89,3 @@ This project uses the MIT license. See the `LICENSE` file for details.
 For questions or collaboration, open an issue or contact the repository owner.
 
 ---
-
-If you'd like, I can:
-- Add a short portfolio-friendly summary for GitHub and LinkedIn
-- Create a compact `README` variant for the `Backend/` and `frontend/` folders
-- Add a small architecture diagram and spot-check CI steps in `jenkinsfile`
