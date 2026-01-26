@@ -61,16 +61,6 @@
   become: yes
   tags: [app]
 
-- name: Ensure uploads/images directory exists
-  file:
-    path: /opt/personal-library/uploads/images
-    state: directory
-    owner: ansible
-    group: ansible
-    mode: '0755'
-  become: yes
-  tags: [app]
-
 - name: Create backend .env file
   copy:
     content: |
@@ -81,7 +71,7 @@
       SPRING_JPA_HIBERNATE_DDL_AUTO=update
       SPRING_JPA_SHOW_SQL=false
       SERVER_PORT=4000
-    dest: /opt/personal-library/uploads/images/.env
+    dest: /opt/personal-library/Backend/.env
     owner: ansible
     group: ansible
     mode: '0644'
@@ -95,7 +85,7 @@
 
 - name: Set JWT values in backend .env
   lineinfile:
-    path: /opt/personal-library/uploads/images/.env
+    path: /opt/personal-library/Backend/.env
     regexp: '^{{ item.key }}='
     line: '{{ item.key }}={{ item.value }}'
     create: yes
@@ -159,50 +149,6 @@
   debug:
     var: pull_result.stdout_lines
   when: pull_result.stdout_lines is defined
-  tags: [app]
-
-- name: Check for Docker containers publishing host port 3008
-  shell: |
-    docker ps --format '{{.ID}} {{.Ports}}' | awk '/0.0.0.0:3008->/{print $1}' | tr '\n' ' '
-  args:
-    chdir: /opt/personal-library
-  register: port3008_containers
-  become: yes
-  become_user: ansible
-  changed_when: false
-  tags: [app]
-
-- name: Stop and remove containers using host port 3008
-  shell: |
-    for cid in {{ port3008_containers.stdout }}; do
-      [ -n "$cid" ] || continue
-      docker stop "$cid" || true
-      docker rm "$cid" || true
-    done
-  args:
-    chdir: /opt/personal-library
-  when: port3008_containers.stdout != ''
-  become: yes
-  become_user: ansible
-  tags: [app]
-
-- name: Kill any non-docker process listening on port 3008
-  shell: |
-    # try fuser first, fall back to ss+kill
-    if command -v fuser >/dev/null 2>&1; then
-      fuser -k 3008/tcp || true
-    else
-      pid=$(ss -ltnp 2>/dev/null | awk '/:3008 /{print $6}' | sed -n 's/.*pid=\([0-9]*\),.*/\1/p' | head -n1)
-      if [ -n "$pid" ]; then
-        kill -9 "$pid" || true
-      fi
-    fi
-  args:
-    chdir: /opt/personal-library
-  when: port3008_containers.stdout == ''
-  become: yes
-  become_user: ansible
-  changed_when: false
   tags: [app]
 
 - name: Start containers with docker compose

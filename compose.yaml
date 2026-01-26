@@ -25,7 +25,7 @@ services:
     image: pathum2002/personal-library-backend:${DEPLOY_TAG:-latest}
     restart: unless-stopped
     env_file:
-      - uploads/images/.env
+      - Backend/.env
     volumes:
       - backend_data:/app/data
       - ./uploads:/app/uploads
