@@ -1,0 +1,47 @@
+# Maven build outputs
+/target
+**/target
+*.jar
+*.war
+*.ear
+
+# Java class files and logs
+*.class
+*.log
+*.tmp
+
+# Node / frontend
+node_modules
+**/node_modules
+frontend/frontend/node_modules
+frontend/frontend/build
+frontend/frontend/dist
+
+# Uploaded files (not needed in image)
+/uploads
+uploads/
+
+# IDE and OS files
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Environment and local config
+.env
+*.env
+.env.local
+
+# Misc
+*.bak
+*.orig
+*.swp
+
+# Docker and Git
+.git
+.gitignore
+.dockerignore
+
+# Exclude local Maven repository cache (optional)
+.m2/repository
