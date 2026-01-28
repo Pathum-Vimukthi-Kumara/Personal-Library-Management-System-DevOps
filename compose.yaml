@@ -58,7 +58,8 @@ volumes:
   db_store:
   backend_data:
   frontend_data:
-
+//
 networks:
   app-network:
+
     driver: bridge
