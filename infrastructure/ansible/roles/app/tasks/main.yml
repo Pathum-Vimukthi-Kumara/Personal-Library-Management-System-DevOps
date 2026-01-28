@@ -137,6 +137,7 @@
 - name: Pull latest Docker images
   shell: |
     export DEPLOY_TAG="{{ deploy_tag | default('latest') }}"
+    export FRONTEND_PORT="{{ frontend_port | default('3008') }}"
     docker compose -f compose.yaml pull
   args:
     chdir: /opt/personal-library
@@ -153,7 +154,7 @@
 
 - name: Ensure FRONTEND_PORT in backend .env
   lineinfile:
-    path: /opt/personal-library/Backend/.env
+    path: /opt/personal-library/.env
     regexp: '^FRONTEND_PORT='
     line: 'FRONTEND_PORT={{ frontend_port | default("3008") }}'
     create: yes
@@ -170,8 +171,12 @@
     if [ -n "$CID" ]; then
       docker rm -f "$CID" || true
     fi
-    # Kill any non-docker process binding the port (use cautiously)
-    PIDS=$(ss -ltnp '( sport = :${PORT} )' | awk 'NR>1 { gsub(/.*pid=/,"",$6); gsub(/,.*/,"",$6); print $6 }' | sort -u)
+    # Find any non-docker PIDs binding the port using lsof (more portable) and kill them
+    if command -v lsof >/dev/null 2>&1; then
+      PIDS=$(lsof -t -i :${PORT} || true)
+    else
+      PIDS=$(ss -ltnp | grep ":${PORT} " | awk '{print $6}' | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | sort -u || true)
+    fi
     if [ -n "$PIDS" ]; then
       echo "Killing processes on port $PORT: $PIDS"
       kill -9 $PIDS || true
@@ -182,6 +187,7 @@
 - name: Start containers with docker compose
   shell: |
     export DEPLOY_TAG="{{ deploy_tag | default('latest') }}"
+    export FRONTEND_PORT="{{ frontend_port | default('3008') }}"
     docker compose -f compose.yaml up -d
   args:
     chdir: /opt/personal-library
@@ -305,7 +311,7 @@
       - "Backend Status: {{ backend_health.stdout | default('unknown') }}"
       - "Frontend Status: {{ 'accessible' if frontend_check.status == 200 else 'not accessible' }}"
       - ""
-      - "Application URL: http://{{ ansible_host }}:3008"
+      - "Application URL: http://{{ ansible_host }}:{{ frontend_port | default(3008) }}"
       - ""
       - "Deployment complete!"
   tags: [app]
