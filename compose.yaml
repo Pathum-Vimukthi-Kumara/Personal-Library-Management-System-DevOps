@@ -44,7 +44,7 @@ services:
   frontend:
     image: pathum2002/personal-library-frontend:${DEPLOY_TAG:-latest}
     ports:
-      - "3008:80"
+      - "${FRONTEND_PORT:-3008}:80"
     restart: unless-stopped
     volumes:
       - frontend_data:/usr/share/nginx/html/data

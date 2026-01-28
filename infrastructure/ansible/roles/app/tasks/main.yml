@@ -151,6 +151,34 @@
   when: pull_result.stdout_lines is defined
   tags: [app]
 
+- name: Ensure FRONTEND_PORT in backend .env
+  lineinfile:
+    path: /opt/personal-library/Backend/.env
+    regexp: '^FRONTEND_PORT='
+    line: 'FRONTEND_PORT={{ frontend_port | default("3008") }}'
+    create: yes
+  become: yes
+  become_user: ansible
+  tags: [app]
+
+- name: Ensure host port for frontend is free
+  become: yes
+  shell: |
+    PORT={{ frontend_port | default('3008') }}
+    # If a container is already binding the port, remove it
+    CID=$(docker ps -qf "publish=${PORT}")
+    if [ -n "$CID" ]; then
+      docker rm -f "$CID" || true
+    fi
+    # Kill any non-docker process binding the port (use cautiously)
+    PIDS=$(ss -ltnp '( sport = :${PORT} )' | awk 'NR>1 { gsub(/.*pid=/,"",$6); gsub(/,.*/,"",$6); print $6 }' | sort -u)
+    if [ -n "$PIDS" ]; then
+      echo "Killing processes on port $PORT: $PIDS"
+      kill -9 $PIDS || true
+    fi
+  tags: [app]
+  ignore_errors: yes
+
 - name: Start containers with docker compose
   shell: |
     export DEPLOY_TAG="{{ deploy_tag | default('latest') }}"
@@ -211,7 +239,7 @@
 - name: Wait for frontend to be accessible
   wait_for:
     host: localhost
-    port: 3008
+    port: "{{ frontend_port | default(3008) }}"
     delay: 10
     timeout: 90
     state: started
@@ -219,7 +247,7 @@
 
 - name: Check frontend accessibility
   uri:
-    url: http://localhost:3008
+    url: "http://localhost:{{ frontend_port | default(3008) }}"
     status_code: 200
     timeout: 5
   retries: 15
