@@ -182,10 +182,10 @@ EOF
 
     post {
         success {
-            echo '✅ CI/CD PIPELINE SUCCESSFUL'
+            echo 'CI/CD PIPELINE SUCCESSFUL'
         }
         failure {
-            echo '❌ CI/CD PIPELINE FAILED'
+            echo ' CI/CD PIPELINE FAILED'
         }
         always {
             echo '=== Pipeline finished ==='
