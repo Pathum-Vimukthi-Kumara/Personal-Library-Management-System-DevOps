@@ -7,7 +7,7 @@ export default function Sidebar({ currentView, onSelect, onAddItem }) {
     <aside className="hidden md:flex md:flex-col w-60 shrink-0 border-r bg-white">
       <div className="px-6 py-6 border-b">
         <div className="text-2xl font-semibold tracking-wide flex items-center gap-2">
-          <span className="inline-block">libib</span>
+          <span className="inline-block">BookVault</span>
           <span className="text-gray-400">📚</span>
         </div>
       </div>

@@ -1,6 +1,5 @@
 # Use official Node.js image as the base
 FROM node:18-alpine AS build
-# Default to empty so frontend uses relative /api via Nginx proxy
 ARG REACT_APP_API_URL=
 ENV REACT_APP_API_URL=${REACT_APP_API_URL}
 
