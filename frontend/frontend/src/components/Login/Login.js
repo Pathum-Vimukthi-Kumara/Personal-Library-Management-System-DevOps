@@ -43,7 +43,7 @@ function Login() {
       <div className="max-w-md w-full bg-white/90 backdrop-blur rounded-2xl shadow-xl border border-indigo-100 p-8">
         <div className="flex items-center justify-center gap-3 mb-2">
           <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-indigo-600 text-white shadow-sm">📚</span>
-          <h2 className="text-3xl font-bold text-gray-900">Library</h2>
+          <h2 className="text-3xl font-bold text-gray-900">Pathum Vimukthi</h2>
         </div>
         <p className="text-center text-gray-600 mb-6">Welcome back  manage your personal collection</p>
 
